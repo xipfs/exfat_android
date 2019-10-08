@@ -42,12 +42,13 @@ public final class ExFatSuperBlock{
         final ByteBuffer b = ByteBuffer.allocate(SIZE); // 设置 512 字节缓冲区
         b.order(ByteOrder.LITTLE_ENDIAN); // 小端序
         device.read(0l, b);
+        /*
         StringBuilder sb = new StringBuilder();
         byte[] bs = b.array();
         for(byte bb: bs) {
             sb.append(bb).append(" ");
         }
-        Log.d("ExFatSuperBlock", sb.toString());
+        Log.d("ExFatSuperBlock", sb.toString());*/
         // 前3个字节为跳转指令 EB 76 90(JMP 76 NOP)
         final byte[] oemBytes = new byte[OEM_NAME.length()];
         b.position(0x03); // 跳过前3字节 检测 OEM 字符串
@@ -119,7 +120,9 @@ public final class ExFatSuperBlock{
         da.read(dest, clusterToOffset(cluster));
     }
 
-
+    public void writeCluster(ByteBuffer dest, long cluster) throws IOException{
+        da.write(dest, clusterToOffset(cluster));
+    }
     // 每扇区字节数 2^n
     public int getBlockSize() {
         return (1 << blockBits);

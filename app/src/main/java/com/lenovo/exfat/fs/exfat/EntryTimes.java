@@ -141,4 +141,17 @@ final class EntryTimes {
         return accessed == null ? null :  (Date) accessed.clone();
     }
 
+    public String toString(){
+        final StringBuilder result = new StringBuilder();
+        result.append(EntryTimes.class.getName());
+        result.append(" [创建时间 = ");
+        result.append(this.created);
+        result.append(", 修改时间 = ");
+        result.append(this.modified);
+        result.append(", 访问时间 = ");
+        result.append(this.accessed);
+        result.append("]");
+
+        return result.toString();
+    }
 }

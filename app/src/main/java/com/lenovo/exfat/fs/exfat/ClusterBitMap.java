@@ -1,6 +1,8 @@
 package com.lenovo.exfat.fs.exfat;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 /**
  * 簇位图文件。簇位图文件是ExFAT文件系统中的一个元文件，类似于 NTFS 文件系统中的元文件$BitMap，用来管理分区中簇的使用情况
@@ -44,6 +46,18 @@ public final class ClusterBitMap {
         final long offset = bitNum / 8;
         final int bits = this.da.getUint8(offset + this.devOffset);
         return (bits & (1 << (bitNum % 8))) == 0;
+    }
+
+    public void freeCluster(long cluster) throws IOException{
+        Cluster.checkValid(cluster, this.sb);
+        final long bitNum = cluster - Cluster.FIRST_DATA_CLUSTER;
+        final long offset = bitNum / 8;
+        final int bits = this.da.getUint8(offset + this.devOffset);
+        ByteBuffer buffer = ByteBuffer.allocate(8);
+        buffer.order(ByteOrder.LITTLE_ENDIAN);
+        buffer.put((byte) (1 << (bitNum % 8)));
+        this.da.write(buffer,offset + this.devOffset);
+
     }
 
     public long getStartCluster() {

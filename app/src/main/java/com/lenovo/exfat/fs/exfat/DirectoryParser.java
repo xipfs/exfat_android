@@ -62,13 +62,12 @@ public class DirectoryParser {
         if (this.upcase != null) {
             throw new IllegalStateException("already had an upcase table");
         }
-
         this.upcase = upcase;
-
         return this;
     }
 
     private void init() throws IOException {
+        Log.i(TAG,"Directory Parser init "+cluster);
         this.sb.readCluster(chunk, cluster);
         chunk.rewind();
     }
@@ -78,6 +77,7 @@ public class DirectoryParser {
             "not on entry boundary"; //NOI18N
         if (chunk.remaining() == 0) {
             cluster = node.nextCluster(cluster);
+            Log.i(TAG,"advance add index");
             if (Cluster.invalid(cluster)) {
                 return false;
             }
@@ -104,26 +104,31 @@ public class DirectoryParser {
      *0xC0 Stream Extension
      *0xC1 File Name
      */
-    public void parse(Visitor v) throws IOException {
+    public void parse(Visitor v,boolean isDelete) throws IOException {
         while (true) {
             final int entryType = DeviceAccess.getUint8(chunk);
-            Log.i(TAG,"Entry type : 0x"+Integer.toHexString(entryType));
             if (entryType == LABEL) {
+                Log.i(TAG,"start parse label ");
                 parseLabel(v);
             } else if (entryType == BITMAP) {
+                Log.i(TAG,"start parse bitmap ");
                 parseBitmap(v);
             } else if (entryType == UPCASE) {
+                Log.i(TAG,"start parse upcase ");
                 parseUpcaseTable(v);
             } else if ((entryType & FILE) == FILE) {
+                Log.i(TAG,"start parse file ");
                 boolean deleted = (entryType & VALID) == 0;
                 if (showDeleted || !deleted) {
-                    parseFile(v, deleted);
+                    parseFile(v, deleted,isDelete);
                 } else {
                     skip(ENTRY_SIZE - 1);
                 }
             } else if (entryType == EOD) {
+                Log.i(TAG,"start parse end ");
                 return;
             } else {
+                Log.i(TAG,"unknown entry type ");
                 if ((entryType & VALID) != 0) {
                     throw new IOException(
                         "unknown entry type " + entryType);
@@ -131,13 +136,13 @@ public class DirectoryParser {
                     skip(ENTRY_SIZE - 1);
                 }
             }
-
-            Log.i(TAG,"File Allocation Table index "+index);
             if (!advance()) {
+                Log.i(TAG,"start parse advance ");
                 return;
             }
             index++;
         }
+
     }
 
     /**
@@ -186,7 +191,7 @@ public class DirectoryParser {
      * 0x01           3       Reserved1
      * 0x04           4    TableChecksum
      * 0x08          12       Reserved2
-     * 0x14           4    FirstCluster
+     * 0x14           4       FirstCluster
      * 0x18           8        DataLength
      */
     private void parseUpcaseTable(Visitor v) throws IOException {
@@ -231,12 +236,23 @@ public class DirectoryParser {
      * 0x10       4             保留
      * 0x14       4             起始簇号
      * 0x18       8             文件大小2
-     *
+     *--------------------------------------------------
+     * 属性3
+     * 字节偏移   字节大小          描述
+     * 0x00         1           目录项类型
+     * 0x01        1            保留
+     * 0x02        2N           文件名
      */
-    private void parseFile(Visitor v, boolean deleted) throws IOException {
-
-
+    private void parseFile(Visitor v, boolean deleted,boolean isDel) throws IOException {
          // 处理属性1
+        if(isDel){
+            chunk.position(chunk.position()-1);
+            Log.i(TAG,"delete file "+Integer.toHexString(DeviceAccess.getUint8(chunk))+" ,cluster : "+cluster); // 85H
+            chunk.position(chunk.position()-1);
+            chunk.put((byte)0x05);
+            node.getSuperBlock().writeCluster(chunk,cluster); // write delete flag;
+        }
+
         int actualChecksum = startChecksum();
 
         int conts = DeviceAccess.getUint8(chunk);
@@ -251,6 +267,8 @@ public class DirectoryParser {
         final EntryTimes times = EntryTimes.read(chunk);
         skip(7); /* unknown */
         advance();
+
+        //属性2
         actualChecksum = addChecksum(actualChecksum);
         if ((DeviceAccess.getUint8(chunk) & FILE_INFO) != FILE_INFO) {
             throw new IOException("expected file info");
@@ -258,6 +276,14 @@ public class DirectoryParser {
         if (deleted) {
             // Keep the index consistent with the index when not recovering deleted files
             index++;
+        }
+
+        if(isDel){
+            chunk.position(chunk.position()-1);
+            Log.i(TAG,"delete file "+Integer.toHexString(DeviceAccess.getUint8(chunk))+" ,cluster : "+cluster);
+            chunk.position(chunk.position()-1);
+            chunk.put((byte)0x05);
+            node.getSuperBlock().writeCluster(chunk,cluster); // write delete flag;
         }
 
         final int flag = DeviceAccess.getUint8(chunk);
@@ -276,9 +302,9 @@ public class DirectoryParser {
 
         conts--;
 
+        //属性3
         /* read file name */
         final StringBuilder nameBuilder = new StringBuilder(nameLen);
-
         while (conts-- > 0) {
             advance();
             actualChecksum = addChecksum(actualChecksum);
@@ -314,14 +340,13 @@ public class DirectoryParser {
         }
 
         final String name = nameBuilder.toString();
-
         if ((this.upcase != null) && (hashName(name) != nameHash)) {
             throw new IOException("name hash mismatch ("
                 + Integer.toHexString(hashName(name)) +
                 " != " + Integer.toHexString(nameHash) + ")");
         }
-
-        v.foundNode(Node.create(sb, startCluster, attrib, name, (flag == FLAG_CONTIGUOUS), realSize, times, deleted),
+        Log.i(TAG,name +"   "+realSize+" startCluster : "+startCluster+" , cluster info :"+this.cluster);
+        v.foundNode(Node.create(sb, startCluster, attrib, name, (flag == FLAG_CONTIGUOUS), realSize, times, deleted,this.cluster,index),
             index);
     }
 

@@ -66,12 +66,14 @@ public class MasterBootRecord implements PartitionTable {
     public static MasterBootRecord read(ByteBuffer buffer)throws IOException {
         MasterBootRecord result =new MasterBootRecord();
         buffer.order(ByteOrder.LITTLE_ENDIAN);
+        /*
         StringBuilder sb = new StringBuilder();
         byte[] bs = buffer.array();
         for(byte bb: bs) {
             sb.append(bb).append(" ");
         }
         Log.d("MasterBootRecord ", sb.toString());
+        */
         if (buffer.limit() < 512) {
             throw new IOException("Size mismatch!");
         }

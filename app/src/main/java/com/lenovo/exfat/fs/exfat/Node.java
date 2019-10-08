@@ -22,7 +22,8 @@ public final class Node {
 
     private final ExFatSuperBlock sb;
     private final DeviceAccess da;
-    private final long startCluster; 	// 根目录首簇号
+    private final long startCluster; 	// file首簇号
+    private long fileInfoCluster;       // fileInfo cluster
     private final EntryTimes times;		// 文件创建时间
 
     private boolean isContiguous;
@@ -30,6 +31,9 @@ public final class Node {
     private String name;				// 文件名
     private long size;					// 文件大小
     private boolean deleted;
+    private long clusterCount;			// 簇数量
+    private int index;
+    private long offset;
 
     private Node(ExFatSuperBlock sb, long startCluster, EntryTimes times) {
         this.sb = sb;
@@ -43,18 +47,24 @@ public final class Node {
         // 根目录首簇号 sb.getRootDirCluster()
         final Node result = new Node(sb, sb.getRootDirCluster(), new EntryTimes(null, null, null));
         result.flags = ATTRIB_DIR;
+        result.name  = "/";
+        result.clusterCount = result.rootDirSize();
+        result.size  = 0;
+        result.index = 0;
         return result;
     }
 
     public static Node create(
         ExFatSuperBlock sb, long startCluster, int flags,
-        String name, boolean isContiguous, long size, EntryTimes times, boolean deleted) {
+        String name, boolean isContiguous, long size, EntryTimes times, boolean deleted,long fileInfoCluster,long offset) {
         final Node result = new Node(sb, startCluster, times);
         result.name = name;
         result.isContiguous = isContiguous;
         result.size = size;
         result.flags = flags;
         result.deleted = deleted;
+        result.fileInfoCluster = fileInfoCluster;
+        result.offset = offset;
         return result;
     }
 
@@ -64,10 +74,9 @@ public final class Node {
      * @return the number of clusters for the root directoy
      * @throws IOException on read error
      */
-    private long rootDirSize() throws IOException {
+    public long rootDirSize() throws IOException {
         long result = 0;
         long current = this.sb.getRootDirCluster();
-        Log.i(TAG,"根目录首簇号："+current);
         while (!Cluster.invalid(current)) {
             result++;
             current = nextCluster(current);
@@ -82,6 +91,7 @@ public final class Node {
         if (this.isContiguous) {
             return cluster + 1;
         } else {
+            //  
             // 找到用户根目录对应到磁盘上的字节偏移位置
             Log.i(TAG,sb.blockToOffset(this.sb.getFatBlockStart())+"@"+cluster);
             final long fatOffset = sb.blockToOffset(this.sb.getFatBlockStart())+ cluster * 4;
@@ -107,6 +117,9 @@ public final class Node {
     public long getStartCluster() {
         return startCluster;
     }
+    public long getFileInfoCluster() {
+        return fileInfoCluster;
+    }
     public String getName() {
         return name;
     }
@@ -116,19 +129,28 @@ public final class Node {
     public boolean isDeleted() {
         return deleted;
     }
+    public void setDeleted(boolean deleted){
+        this.deleted = deleted;
+    }
 
+    public int getIndex(){
+        return index;
+    }
 
 
     @Override
     public String toString() {
         final StringBuilder result = new StringBuilder();
         result.append(Node.class.getName());
-        result.append(" [name=");
+        result.append(" [文件名 = ");
         result.append(this.name);
-        result.append(", contiguous=");
-        result.append(this.isContiguous);
+        result.append(", 大小 = ");
+        result.append(this.size);
+        result.append(", 属性 = ");
+        result.append(this.flags);
+        result.append(", 时间 = ");
+        result.append(this.times.toString());
         result.append("]");
-
         return result.toString();
     }
 
