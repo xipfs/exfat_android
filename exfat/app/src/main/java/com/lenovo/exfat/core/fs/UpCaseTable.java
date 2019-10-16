@@ -18,18 +18,16 @@ import com.lenovo.exfat.core.util.ExFatUtil;
  * @create 2019-10-10 下午5:04
  */
 public class UpCaseTable {
-    private final DeviceAccess da;
-    private long upcaseTableCluster;
-    private long size;
-    private long offset;
+    private static long upcaseTableCluster;
+    private static long size;
+    private static long offset;
 
-    public UpCaseTable(DeviceAccess da) {
-        this.da = da;
+    public UpCaseTable() {
     }
 
-    public void build(long upcaseTableCluster, long size) {
-        this.upcaseTableCluster = upcaseTableCluster;
-        this.size = size;
+    public static void build(long upcaseTableCluster, long size) {
+        UpCaseTable.upcaseTableCluster = upcaseTableCluster;
+        UpCaseTable.size = size;
         offset = ExFatUtil.clusterToOffset(upcaseTableCluster);
     }
 

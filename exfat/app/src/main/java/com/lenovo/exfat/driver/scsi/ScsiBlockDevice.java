@@ -154,4 +154,8 @@ public class ScsiBlockDevice implements BlockDeviceDriver {
         transferCommand(writeCommand, src);
         src.position(src.limit());
     }
+
+    public synchronized  void flush() throws IOException{
+
+    }
 }

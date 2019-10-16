@@ -81,4 +81,8 @@ public class DeviceAccess {
     public void write(ByteBuffer dest, long offset) throws IOException {
         device.write(offset, dest);
     }
+
+    public void flush() throws IOException{
+        device.flush();
+    }
 }

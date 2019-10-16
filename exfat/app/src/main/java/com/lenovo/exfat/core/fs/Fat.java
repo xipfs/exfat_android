@@ -32,23 +32,21 @@ import java.util.List;
 public class Fat {
     private static final String TAG = Fat.class.getSimpleName();
 
-    private final DeviceAccess da;
     private static final int SIZE = 512;
-    private final int FAT_ENTRY_SIZE =4;
+    private static final int FAT_ENTRY_SIZE =4;
 
-    private List<FatEntry> entries = new ArrayList<>();
+    private static List<FatEntry> entries = new ArrayList<>();
 
-    public Fat(DeviceAccess da) {
-        this.da = da;
+    public Fat() {
     }
 
-    public void build() throws IOException {
+    public static void build() throws IOException {
         final ByteBuffer buffer = ByteBuffer.allocate(SIZE); // 每个扇区512字节
         buffer.order(ByteOrder.LITTLE_ENDIAN); // 小端序
         long offset = ExFatUtil.blockToOffset(Constants.FAT_BLOCK_START);
         Log.i(TAG,"Fat offset :"+Long.toHexString(offset));
         for(int i = 0 ; i< Constants.FAT_BLOCK_COUNT;i++) {
-            da.read(buffer,offset);
+            ExFatFileSystem.da.read(buffer,offset);
             buffer.flip();
             for(int j = 0 ; j < buffer.limit()/FAT_ENTRY_SIZE; j++){
                 byte[] values = new byte[4];
@@ -70,10 +68,10 @@ public class Fat {
      * @param cluster
      * @return
      */
-    public FatEntry getFatEntryByCluster(long cluster){
+    public static FatEntry getFatEntryByCluster(long cluster){
         return entries.get((int)cluster);
     }
-    private long byte2long(byte[] bytes){
+    private static long byte2long(byte[] bytes){
         long i0 = bytes[0] & 0xff;
         long i1 = (bytes[1] & 0xff) << 8;
         long i2 = (bytes[2] & 0xff) << 16;

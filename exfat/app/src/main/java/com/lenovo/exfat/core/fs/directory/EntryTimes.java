@@ -5,6 +5,7 @@ import com.lenovo.exfat.core.fs.DeviceAccess;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.TimeZone;
@@ -110,6 +111,18 @@ public class EntryTimes {
             e.printStackTrace();
             return null;
         }
+    }
+
+    public static int UnixToExfat(){
+        Calendar now = Calendar.getInstance();
+        int year   = now.get(Calendar.YEAR);
+        int month  = now.get(Calendar.MONTH) + 1;
+        int day    = now.get(Calendar.DAY_OF_MONTH);
+        int hour   = now.get(Calendar.HOUR_OF_DAY);
+        int minute = now.get(Calendar.MINUTE);
+        int second = now.get(Calendar.SECOND)/2;
+        int value = (year-EXFAT_EPOCH) << 25 | (month << 21 ) | (day << 16) |(hour << 11)|(minute << 5) | second ;
+        return value;
     }
 
 

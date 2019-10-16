@@ -8,6 +8,7 @@ public interface BlockDeviceDriver {
     void init() throws IOException;
     void read(Long deviceOffset, ByteBuffer buffer) throws  IOException;
     void write(Long deviceOffset, ByteBuffer buffer) throws IOException;
+    void flush() throws IOException;
     int getBlockSize();
     long getBlocks() ;
 }

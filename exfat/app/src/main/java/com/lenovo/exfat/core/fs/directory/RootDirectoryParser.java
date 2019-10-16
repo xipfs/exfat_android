@@ -7,6 +7,7 @@ import com.lenovo.exfat.core.fs.AllocationBitmap;
 import com.lenovo.exfat.core.fs.DeviceAccess;
 import com.lenovo.exfat.core.fs.DosBootRecord;
 import com.lenovo.exfat.core.fs.ExFatFile;
+import com.lenovo.exfat.core.fs.ExFatFileSystem;
 import com.lenovo.exfat.core.fs.Fat;
 import com.lenovo.exfat.core.fs.FatEntry;
 import com.lenovo.exfat.core.fs.UpCaseTable;
@@ -32,65 +33,19 @@ import java.nio.ByteOrder;
 public class RootDirectoryParser {
     private static final String TAG = RootDirectoryParser.class.getSimpleName();
 
-    private static final int DIR_ENTRY_SIZE = 32;               // 目录项大小
-    private static final int ENAME_MAX_LEN = 15;
-    private static final int VALID = 0x80;
-    private static final int CONTINUED = 0x40;
-    private static final int IMPORTANCE_MASK = 0x20;
-
-    //Directory Entry Type
-    private static final int EOD =      0x00;
-    private static final int BITMAP =   0x81;
-    private static final int UPCASE =   0x82;
-    private static final int LABEL =    0x83;
-    private static final int FILE =     0x85;
-    private static final int GUID =     0xA0;
-    private static final int TexFATPadding      = 0xA1;
-    private static final int AccessControlTable = 0xA2;
-    private static final int StreamExtension    = 0xC0;
-    private static final int FileName           = 0xC1;
-
-    private static final int FILE_DEL = 0x05;
-    private static final int StreamExtension_DEL = 0x40;
-    private static final int FileName_DEL = 0x41;
-
-    private static final int FILE_INFO = (0x00 | CONTINUED);
-    private static final int FILE_NAME = (0x01 | CONTINUED);
-    private static final int FLAG_FRAGMENTED = 1;
-    private static final int FLAG_CONTIGUOUS = 3;
-
-    //文件属性
-    public static final int ATTRIB_RO = 0x01;		// 00000001 只读
-    public static final int ATTRIB_HIDDEN = 0x02;	// 00000010 隐藏
-    public static final int ATTRIB_SYSTEM = 0x04;	// 00000100 系统
-    public static final int ATTRIB_VOLUME = 0x08;   // 00001000 卷簇
-    public static final int ATTRIB_DIR = 0x10;      // 00010000 子目录
-    public static final int ATTRIB_ARCH = 0x20;     // 00100000 存档
-
-
-    private final DeviceAccess da;
-    private final DosBootRecord dbr;
-    private AllocationBitmap bitmap;
-    private UpCaseTable upCaseTable;
-
     private ByteBuffer buffer;
     private long rootDirStartCluster;   // 根目录首簇号
     private long offset;                // 偏移位置
 
     private ExFatFile root;
-    private final Fat fat;
     private FatEntry fatEntry;
 
     private ExFatFileEntry fileEntry;  // 文件目录项信息
     private ExFatFile  exFatFile;      // 文件
 
-    public RootDirectoryParser(DeviceAccess da, DosBootRecord dbr, Fat fat, AllocationBitmap bitmap, UpCaseTable upCaseTable) {
-        this.da = da;
-        this.dbr = dbr;
-        this.fat = fat;
-        this.bitmap = bitmap;
-        this.upCaseTable = upCaseTable;
-        buffer = ByteBuffer.allocate(DIR_ENTRY_SIZE);
+    private long end_cluster;
+    public RootDirectoryParser() {
+        buffer = ByteBuffer.allocate(Constants.DIR_ENTRY_SIZE);
         buffer.order(ByteOrder.LITTLE_ENDIAN);
 
         // 解析exFAT目录树状目录结构
@@ -106,7 +61,8 @@ public class RootDirectoryParser {
         root.setAbsolutePath("/");
         root.setLength(0);
         root.setFileCluster(0);
-        fatEntry = fat.getFatEntryByCluster(Constants.ROOT_DIRECTORY_CLUSTER);
+        fatEntry = Fat.getFatEntryByCluster(Constants.ROOT_DIRECTORY_CLUSTER);
+        end_cluster = Constants.ROOT_DIRECTORY_CLUSTER;
     }
 
     /**
@@ -123,56 +79,62 @@ public class RootDirectoryParser {
                 long nextCluster = fatEntry.getNextCluster();
                 if(nextCluster == 0){
                     Log.i(TAG,"处理连续簇根目录信息");
+                    end_cluster ++;
                     oldOffset = offset;
                 }else{
                     Log.i(TAG,"处理非连续簇根目录信息 next_cluster："+Long.toHexString(nextCluster));
                     offset = ExFatUtil.clusterToOffset(fatEntry.getNextCluster());
-                    fatEntry = fat.getFatEntryByCluster(fatEntry.getNextCluster());
+                    fatEntry = Fat.getFatEntryByCluster(fatEntry.getNextCluster());
                     oldOffset = offset;
+                    end_cluster = nextCluster;
                 }
             }
             // 读取根目录项
-            da.read(buffer,offset);
+            ExFatFileSystem.da.read(buffer,offset);
             buffer.flip();
             final int entryType = DeviceAccess.getUint8(buffer);
-            if (entryType == LABEL) {
+            if (entryType == Constants.LABEL) {
                 Log.i(TAG,"start parse label ");
                 parseLabel();
-            } else if (entryType == BITMAP) {
+            } else if (entryType == Constants.BITMAP) {
                 Log.i(TAG,"start parse bitmap ");
                 parseBitmap();
-            } else if (entryType == UPCASE) {
+            } else if (entryType == Constants.UPCASE) {
                 Log.i(TAG,"start parse upcase ");
                 parseUpcaseTable();
-            } else if (entryType == FILE) {
+            } else if (entryType == Constants.FILE) {
                 // Log.i(TAG,"start parse file ");
                 parseFile();
-            } else if (entryType == EOD) {
+            } else if (entryType == Constants.EOD) {
+                root.setRoot_end_cluster(end_cluster);
+                root.setRoot_end_offset(offset);
                 Log.i(TAG,"start parse end ");
                 break;
-            } else if (entryType == GUID) {
+            }else if (entryType == Constants.NO_LABEL) {
+                Log.i(TAG,"start parse NO_LABEL ");
+            }else if (entryType == Constants.GUID) {
                 Log.i(TAG,"start parse GUID ");
-            }else if (entryType == TexFATPadding) {
+            }else if (entryType == Constants.TexFATPadding) {
                 Log.i(TAG,"start parse TexFATPadding ");
-            }else if (entryType == AccessControlTable) {
+            }else if (entryType == Constants.AccessControlTable) {
                 Log.i(TAG,"start parse AccessControlTable ");
-            }else if (entryType == StreamExtension) {
-                // Log.i(TAG,"start parse StreamExtension ");
+            }else if (entryType == Constants.StreamExtension) {
+                // Log.i(TAG,"start parse StreamExtensionEntry ");
                 parseStreamExtension(); // 属性2
-            }else if (entryType == FileName) {
+            }else if (entryType == Constants.FileName) {
                 // Log.i(TAG,"start parse FileName ");
                 parseFileName();       // 属性3
-            }else if (entryType == FILE_DEL) {
+            }else if (entryType == Constants.FILE_DEL) {
                 Log.i(TAG,"start parse file del ");
-            }else if (entryType == StreamExtension_DEL) {
+            }else if (entryType == Constants.StreamExtension_DEL) {
                 Log.i(TAG,"start parse StreamExtension_DEL ");
-            }else if (entryType == FileName_DEL) {
+            }else if (entryType == Constants.FileName_DEL) {
                 Log.i(TAG,"start parse FileName_DEL ");
             }else {
                 Log.i(TAG,"unknown entry type 0x" + Integer.toHexString(entryType));
             }
             // 下一个目录项
-            offset += DIR_ENTRY_SIZE;
+            offset += Constants.DIR_ENTRY_SIZE;
             buffer.clear();
         }
         root.updateCache();
@@ -194,7 +156,7 @@ public class RootDirectoryParser {
         for (int i = 0; i < len; i++) {
             labelBuilder.append(DeviceAccess.getChar(buffer));
         }
-        Constants.LABEL = labelBuilder.toString();
+        Constants.DISK_LABEL = labelBuilder.toString();
         Log.i(TAG,"label => "+labelBuilder.toString());
     }
 
@@ -210,8 +172,9 @@ public class RootDirectoryParser {
         skip(19); /* unknown content */
         final long bitmapCluster = DeviceAccess.getUint32(buffer); // 起始簇号
         final long size = DeviceAccess.getUint64(buffer);         // 文件大小
-        Log.i(TAG,"Bitmap Cluster => "+bitmapCluster);
-        bitmap.build(bitmapCluster,size);
+        Log.i(TAG,"Bitmap Cluster : "+bitmapCluster+" , offset : "+Long.toHexString(ExFatUtil.clusterToOffset(bitmapCluster)));
+
+        AllocationBitmap.build(bitmapCluster,size);
     }
 
     /**
@@ -231,7 +194,7 @@ public class RootDirectoryParser {
         skip(12); /* unknown */
         final long upcaseTableCluster = DeviceAccess.getUint32(buffer);
         final long size = DeviceAccess.getUint64(buffer);
-        upCaseTable.build(upcaseTableCluster,size);
+        UpCaseTable.build(upcaseTableCluster,size);
     }
 
     /**
@@ -293,7 +256,7 @@ public class RootDirectoryParser {
         skip(2); /* unknown */
         EntryTimes times = EntryTimes.read(buffer);
         skip(7); /* unknown */
-
+        fileEntry.setOffset(offset);   // 记录目录项偏移
         fileEntry.setConts(conts);
         fileEntry.setAttrib(attrib);
         fileEntry.setCheckSum(checkSum);
@@ -305,6 +268,9 @@ public class RootDirectoryParser {
      * 处理属性2
      */
     public void parseStreamExtension(){
+        StreamExtensionEntry entry = new StreamExtensionEntry();
+        entry.setOffset(offset);
+
         final int flag = DeviceAccess.getUint8(buffer);  // 碎片标志
         skip(1); /* unknown */
         int nameLen = DeviceAccess.getUint8(buffer);
@@ -320,6 +286,8 @@ public class RootDirectoryParser {
         fileEntry.setLength(realSize);
         fileEntry.setFileCluster(fileCluster);
         exFatFile.setFileCluster(fileCluster);
+        exFatFile.setLength(realSize);
+        exFatFile.setSecondEntry(entry);
 
     }
 
@@ -327,12 +295,15 @@ public class RootDirectoryParser {
      * 处理属性3
      */
     public void parseFileName(){
+        FileNameEntry entry = new FileNameEntry();
+        entry.setOffset(offset);
         // 处理属性3, 属性3存在多个，需要根据 conts 多次处理
         /* read file name */
         skip(1); /* unknown */
-        for (int i = 0; i < ENAME_MAX_LEN; i++) {
+        for (int i = 0; i < Constants.ENAME_MAX_LEN; i++) {
                 fileEntry.addChar(DeviceAccess.getChar(buffer));
         }
+        exFatFile.getThirdsEntry().add(entry);
     }
     /**
      * 跳过输入字节
@@ -342,4 +313,5 @@ public class RootDirectoryParser {
     private void skip(int bytes) {
         buffer.position(buffer.position() + bytes);
     }
+
 }

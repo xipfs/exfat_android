@@ -5,6 +5,8 @@ import android.util.Log;
 import com.lenovo.exfat.core.FileSystem;
 import com.lenovo.exfat.core.fs.directory.ChildDirectoryParser;
 import com.lenovo.exfat.core.fs.directory.RootDirectoryParser;
+import com.lenovo.exfat.core.io.ExFatBuffer;
+import com.lenovo.exfat.core.io.ExFatFileInputStream;
 import com.lenovo.exfat.core.util.Constants;
 import com.lenovo.exfat.driver.BlockDeviceDriver;
 
@@ -23,15 +25,10 @@ import java.util.List;
 public class ExFatFileSystem implements FileSystem {
     private static final String TAG = ExFatFileSystem.class.getSimpleName();
     private BlockDeviceDriver device;   // 只是保存作用，尽量不使用它.
-    private DeviceAccess da;            // 通过此类对设备进行读写
-    private DosBootRecord dbr;          // DOS引导记录
-    private Fat fat;                    // 文件分配表
-    private AllocationBitmap bitmap;    // 簇位图
-    private UpCaseTable upCaseTable;    // 大写字符表
-
+    public  static  DeviceAccess da;            // 通过此类对设备进行读写
 
     // 根文件
-    private ExFatFile root;
+    public static ExFatFile root;
 
     public ExFatFileSystem(BlockDeviceDriver device) {
         this.device = device;
@@ -41,26 +38,22 @@ public class ExFatFileSystem implements FileSystem {
     public void init() throws IOException {
         // 1. 建立 DOS Boot Record
         Log.i(TAG,"6.1 Build DosBootRecord ");
-        dbr = new DosBootRecord(da);
-        dbr.build();
-        Log.i(TAG,dbr.toString());
+        DosBootRecord.build();
+        Log.i(TAG,DosBootRecord.print());
 
         // 2. 建立 FAT
         Log.i(TAG,"6.2 Build FAT ");
-        fat = new Fat(da);
-        fat.build();
+        Fat.build();
 
         // 3. 解析用户根目录结构
         Log.i(TAG,"6.3 Build exFAT Root Directory Structure");
-        bitmap = new AllocationBitmap(da);
-        upCaseTable = new UpCaseTable(da);
-        RootDirectoryParser rootParser  = new RootDirectoryParser(da,dbr,fat,bitmap,upCaseTable);
+        RootDirectoryParser rootParser  = new RootDirectoryParser();
         root = rootParser.build();
         Log.i(TAG,root.toString());
 
         //4. 递归解析子目录文件
         Log.i(TAG,"6.4 Build exFAT Child Directory Structure");
-        ChildDirectoryParser childParser = new ChildDirectoryParser(da,fat);
+        ChildDirectoryParser childParser = new ChildDirectoryParser();
         for(ExFatFile child:root.getChildren()){
             if(child.isDirectory()){
                 childParser.build(child);
@@ -69,13 +62,12 @@ public class ExFatFileSystem implements FileSystem {
             }
         }
 
-
-        //9. test
-        ExFatFile file = findFile("/123/456/hello.txt");
-        if(file !=null ){
-            Log.i(TAG,"find file "+file.getName().equals("hello.txt"));
-        }
-
+        //9. test find read delete file
+        //testFindFile();
+        //testReadFile();
+        //testDeleteFile();
+        testCreateFile();
+        //testWriteFile();
 
     }
 
@@ -83,10 +75,54 @@ public class ExFatFileSystem implements FileSystem {
         if(path == null || path.equals("/") || path.trim().equals("")){
             return root;
         }else{
-            return root.findChild(path);
+            return root.find(path);
+        }
+    }
+    public void testFindFile() throws IOException{
+        ExFatFile file = findFile("/hello");
+        if(file !=null ){
+            Log.i(TAG,"find file "+file.getName().equals("hello"));
+            Log.i(TAG,"file length = "+file.length());
+            long cluster = file.getFileCluster();
+            FatEntry fatEntry = Fat.getFatEntryByCluster(cluster);
+            long nextCluster = fatEntry.getNextCluster();
+            Log.i(TAG,"Cluster "+ Long.toHexString(cluster)+" is free "+AllocationBitmap.isClusterFree(cluster));
+            Log.i(TAG,"NextCLuster "+Long.toHexString(nextCluster)+" is free "+AllocationBitmap.isClusterFree(cluster));
         }
     }
 
 
-    
+    public void testReadFile() throws IOException{
+        ExFatFile file = findFile("/123/456/hello.txt");
+        //10. test read file
+        ExFatFileInputStream input = new ExFatFileInputStream(file);
+        ExFatBuffer buffer = new ExFatBuffer();
+        byte[] data = new byte[(int)file.length()];
+        int offset =0;
+        int read = -1;
+        while((read = input.read(buffer)) != -1 ){
+            Log.i(TAG,"read = "+read);
+            buffer.getBuffer().flip();
+            buffer.getBuffer().get(data,offset,read);
+            offset = offset+read;
+
+        }
+        Log.i(TAG,new String(data));
+    }
+    public void testDeleteFile() throws IOException{
+        ExFatFile file = findFile("/123/456/hello.txt");
+        //10. test delete file
+        Log.i(TAG,"start  delete  file : "+file.getName());
+        file.delete();
+    }
+
+    public void testCreateFile() throws IOException{
+        ExFatFile file = new ExFatFile("/hello");
+        file.mkdir();
+    }
+
+    public void testWriteFile(){
+
+    }
+
 }

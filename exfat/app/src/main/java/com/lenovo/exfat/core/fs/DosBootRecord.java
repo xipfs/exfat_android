@@ -17,33 +17,30 @@ import java.nio.ByteOrder;
 public class DosBootRecord {
 
     public static final String TAG = DosBootRecord.class.getSimpleName();
-    private static final int SIZE = 512;
-    private static final String OEM_NAME = "EXFAT   ";
+    public static final int SIZE = 512;
+    public static final String OEM_NAME = "EXFAT   ";
 
-    private final DeviceAccess da;
+    public static long partitionOffset;		// 隐藏扇区数
+    public static long totalBlocks;			// 总扇区数
+    public static long fatBlockStart;			// FAT 起始扇区号
+    public static int fatBlockCount;			// FAT 扇区数
+    public static long clusterBlockStart;		// 首簇起始扇区号
+    public static long clusterCount;			// 总簇数
+    public static long rootDirCluster;		// 根目录首簇号
+    public static int  volumeSerial;			// 卷序列号
+    public static byte fsVersionMinor;		// 版本号
+    public static byte fsVersionMajor;
+    public static short volumeState;  		// 卷状态
+    public static byte blockBits;				// 每扇区字节数 2^n
+    public static byte blocksPerClusterBits;	// 每簇扇区数 2^n
+    public static byte percentInUse;			// 使用百分比
 
-    private long partitionOffset;		// 隐藏扇区数
-    private long totalBlocks;			// 总扇区数
-    private long fatBlockStart;			// FAT 起始扇区号
-    private int fatBlockCount;			// FAT 扇区数
-    private long clusterBlockStart;		// 首簇起始扇区号
-    private long clusterCount;			// 总簇数
-    private long rootDirCluster;		// 根目录首簇号
-    private int  volumeSerial;			// 卷序列号
-    private byte fsVersionMinor;		// 版本号
-    private byte fsVersionMajor;
-    private short volumeState;  		// 卷状态
-    private byte blockBits;				// 每扇区字节数 2^n
-    private byte blocksPerClusterBits;	// 每簇扇区数 2^n
-    private byte percentInUse;			// 使用百分比
-
-    public DosBootRecord(DeviceAccess da){
-        this.da = da;
+    public DosBootRecord(){
     }
-    public void build() throws IOException {
+    public static void build() throws IOException {
         final ByteBuffer b = ByteBuffer.allocate(SIZE); // 设置 512 字节缓冲区
         b.order(ByteOrder.LITTLE_ENDIAN); // 小端序
-        da.read(b,0l);
+        ExFatFileSystem.da.read(b,0l);
         // 前3个字节为跳转指令 EB 76 90(JMP 76 NOP)
         final byte[] oemBytes = new byte[OEM_NAME.length()];
         b.position(0x03); // 跳过前3字节 检测 OEM 字符串
@@ -65,20 +62,20 @@ public class DosBootRecord {
             throw new IOException("missing boot sector signature");
 
 
-        this.partitionOffset = b.getLong(0x40); 	// 隐藏扇区数
-        this.totalBlocks = b.getLong(0x48); 		// 总扇区数
-        this.fatBlockStart = b.getInt(0x50);		// FAT 起始扇区号
-        this.fatBlockCount = b.getInt(0x54);		// FAT 扇区数
-        this.clusterBlockStart = b.getInt(0x58);	// 首簇起始扇区号 也就是2号簇的起始扇区，对应簇位图文件起始扇区。
-        this.clusterCount = b.getInt(0x5c);		// 总簇数
-        this.rootDirCluster = b.getInt(0x60);	// 根目录首簇号
-        this.volumeSerial = b.getInt(0x64);		// 卷序列号
-        this.fsVersionMinor = b.get(0x68);		    // 版本号
-        this.fsVersionMajor = b.get(0x69);		    // 版本号
-        this.volumeState = b.getShort(0x6a);		// 卷状态
-        this.blockBits = b.get(0x6c);				// 每扇区字节数 2^n
-        this.blocksPerClusterBits = b.get(0x6d);    // 每簇扇区数 2^n
-        this.percentInUse = b.get(0x70);            // 使用百分比
+        DosBootRecord.partitionOffset = b.getLong(0x40); 	// 隐藏扇区数
+        DosBootRecord.totalBlocks = b.getLong(0x48); 		// 总扇区数
+        DosBootRecord.fatBlockStart = b.getInt(0x50);		// FAT 起始扇区号
+        DosBootRecord.fatBlockCount = b.getInt(0x54);		// FAT 扇区数
+        DosBootRecord.clusterBlockStart = b.getInt(0x58);	// 首簇起始扇区号 也就是2号簇的起始扇区，对应簇位图文件起始扇区。
+        DosBootRecord.clusterCount = b.getInt(0x5c);		// 总簇数
+        DosBootRecord.rootDirCluster = b.getInt(0x60);	// 根目录首簇号
+        DosBootRecord.volumeSerial = b.getInt(0x64);		// 卷序列号
+        DosBootRecord.fsVersionMinor = b.get(0x68);		    // 版本号
+        DosBootRecord.fsVersionMajor = b.get(0x69);		    // 版本号
+        DosBootRecord.volumeState = b.getShort(0x6a);		// 卷状态
+        DosBootRecord.blockBits = b.get(0x6c);				// 每扇区字节数 2^n
+        DosBootRecord.blocksPerClusterBits = b.get(0x6d);    // 每簇扇区数 2^n
+        DosBootRecord.percentInUse = b.get(0x70);            // 使用百分比
 
         // 保存进常量.
         Constants.TOTAL_BLOCKS = totalBlocks;
@@ -100,7 +97,7 @@ public class DosBootRecord {
 
     }
 
-    public String toString() {
+    public static String print() {
         StringBuilder sb = new StringBuilder();
         sb.append(" \n");
         sb.append("隐藏扇区数: "+ partitionOffset +"\n");
@@ -117,8 +114,5 @@ public class DosBootRecord {
         sb.append("每簇字节数: "+ExFatUtil.getBytesPerCluster()+"\n");
         sb.append("使用百分比: "+percentInUse+"\n");
         return sb.toString();
-    }
-    public DeviceAccess getDeviceAccess() {
-        return da;
     }
 }

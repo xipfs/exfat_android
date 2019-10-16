@@ -17,11 +17,15 @@ public class ExFatFileEntry {
     private int flag;           // 碎片标志
     private int nameLen;        // 名称长度
     private int nameHash;       // 名称哈希
-    private long length;          // 文件大小
+    private long length;        // 文件大小
     private long fileCluster;   // 文件簇号
     private String name;
 
+    private long offset;        // 文件目录项偏移
     private boolean end;
+
+
+
 
     private StringBuilder sb =new StringBuilder();        // 文件名
 
@@ -112,5 +116,13 @@ public class ExFatFileEntry {
 
     public void setTimes(EntryTimes times) {
         this.times = times;
+    }
+
+    public long getOffset() {
+        return offset;
+    }
+
+    public void setOffset(long offset) {
+        this.offset = offset;
     }
 }

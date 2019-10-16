@@ -42,11 +42,9 @@ public class FileSystemFactory {
         // 找到分区后读取USB设备需要加上偏移量
         ByteBlockDevice byteBlockDevice  = new ByteBlockDevice(scsiBlockDevice,partition.getLogicalOffsetToAdd());
         FileSystem fs = new ExFatFileSystem(byteBlockDevice);
-
         // 4. 初始化文件系统
         fs.init();
-
-
+        
         return fs;
     }
 

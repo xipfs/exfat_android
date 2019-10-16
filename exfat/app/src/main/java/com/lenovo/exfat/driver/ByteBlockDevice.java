@@ -28,6 +28,12 @@ public class ByteBlockDevice implements  BlockDeviceDriver{
         return this.blocks;
     }
 
+    public void flush() throws IOException{
+        ByteBuffer tmp = ByteBuffer.allocate(blockSize);
+        targetBlockDevice.read(0l, tmp);
+        tmp.flip();
+        targetBlockDevice.write(0l, tmp);
+    }
     @Override
     public void init() throws IOException {
         Log.i(TAG,"ByteBlockDevice init");

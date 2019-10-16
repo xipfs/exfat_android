@@ -26,21 +26,19 @@ public class AllocationBitmap {
 
     public static final long FIRST_DATA_CLUSTER = 2; // 起始簇，前两个簇有特殊用途
 
-    private long bitmapCluster;          // BitMap 所在簇号
-    private long size;                   // BitMap 大小
-    private long clusterCount;           // 簇数量
-    private long offset;                 // 偏移位置
-    private final DeviceAccess da;
+    private static long bitmapCluster;          // BitMap 所在簇号
+    private static long size;                   // BitMap 大小
+    private static long clusterCount;           // 簇数量
+    private static long offset;                 // 偏移位置
 
-    public AllocationBitmap(DeviceAccess da) {
-        this.da =da;
+    public AllocationBitmap() {
     }
 
-    public void build(long bitmapCluster, long size) {
-        this.bitmapCluster = bitmapCluster;
-        this.size = size;
-        this.clusterCount = Constants.CLUSTER_COUNT - Cluster.FIRST_DATA_CLUSTER;
-        this.offset = ExFatUtil.clusterToOffset(bitmapCluster); // 定位到簇位图所在位置
+    public static void build(long bitmapCluster, long size) {
+        AllocationBitmap.bitmapCluster = bitmapCluster;
+        AllocationBitmap.size = size;
+        AllocationBitmap.clusterCount = Constants.CLUSTER_COUNT - Cluster.FIRST_DATA_CLUSTER;
+        AllocationBitmap.offset = ExFatUtil.clusterToOffset(bitmapCluster); // 定位到簇位图所在位置
 
     }
 
@@ -51,11 +49,24 @@ public class AllocationBitmap {
      * @throws IOException
      */
 
-    public boolean isClusterFree(long cluster) throws IOException {
+    public static boolean isClusterFree(long cluster) throws IOException {
         final long bitNum = cluster - Cluster.FIRST_DATA_CLUSTER;
         final long bitOffset = bitNum / 8;
-        final int bits = da.getUint8(offset + bitOffset);
+        final int bits = ExFatFileSystem.da.getUint8(offset + bitOffset);
         return (bits & (1 << (bitNum % 8))) == 0;
+    }
+
+    /**
+     * 找到一个空闲的簇
+     * @return
+     */
+    public static long getNextFreeCluster() throws IOException{
+        for(long i = 10 ; i<Constants.CLUSTER_COUNT; i++){
+            if(isClusterFree(i)){
+                return i;
+            }
+        }
+        throw new IOException("未找到空闲的簇");
     }
 
     /**
@@ -64,10 +75,31 @@ public class AllocationBitmap {
      * @param cluster
      * @throws IOException
      */
-    public void freeCluster(long cluster) throws IOException{
+    public static void freeCluster(long cluster) throws IOException{
+        final long bitNum = cluster - Cluster.FIRST_DATA_CLUSTER;
+        final long bitOffset = bitNum / 8;
+        int bits = ExFatFileSystem.da.getUint8(offset + bitOffset);
+        bits = bits & (~(1 << (bitNum % 8)));
         ByteBuffer buffer = ByteBuffer.allocate(1);
-        buffer.put((byte)0);
-        da.write(buffer,offset + cluster);
+        buffer.put((byte)bits);
+        buffer.flip();
+        ExFatFileSystem.da.write(buffer,offset + bitOffset);
+    }
+    /**
+     * 将此簇置为使用
+     *
+     * @param cluster
+     * @throws IOException
+     */
+    public static void useCluster(long cluster) throws IOException{
+        final long bitNum = cluster - Cluster.FIRST_DATA_CLUSTER;
+        final long bitOffset = bitNum / 8;
+        int bits = ExFatFileSystem.da.getUint8(offset + bitOffset);
+        bits = bits | (1 << (bitNum % 8));
+        ByteBuffer buffer = ByteBuffer.allocate(1);
+        buffer.put((byte)bits);
+        buffer.flip();
+        ExFatFileSystem.da.write(buffer,offset + bitOffset);
     }
 
     public String toString(){
