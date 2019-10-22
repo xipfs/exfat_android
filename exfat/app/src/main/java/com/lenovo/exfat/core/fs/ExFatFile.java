@@ -3,19 +3,19 @@ package com.lenovo.exfat.core.fs;
 
 import android.util.Log;
 
+import com.lenovo.exfat.core.fs.directory.ChildDirectoryParser;
 import com.lenovo.exfat.core.fs.directory.EntryTimes;
 import com.lenovo.exfat.core.fs.directory.ExFatFileEntry;
 import com.lenovo.exfat.core.fs.directory.FileNameEntry;
 import com.lenovo.exfat.core.fs.directory.StreamExtensionEntry;
 import com.lenovo.exfat.core.util.Constants;
+import com.lenovo.exfat.core.util.ExFatCache;
 import com.lenovo.exfat.core.util.ExFatUtil;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,32 +35,82 @@ public class ExFatFile{
     private String name;
     private String absolutePath;
     private long length;
-    private long fileCluster;
 
-    private ExFatFileEntry entry;
+    private long fileInfoCluster; // 文件元信息对应簇
+
+    private long fileCluster;     // 文件内容对应簇
+
+    private ExFatFileEntry firstEntry;
     private StreamExtensionEntry secondEntry;
     private List<FileNameEntry>  thirdsEntry = new ArrayList<>();
 
     private Map<String,ExFatFile> cache = new HashMap<>();  // 缓存子文件
-    private List<ExFatFile> children = new ArrayList<ExFatFile>();
+    private List<ExFatFile> children = new ArrayList<>();
 
-    private long root_end_offset;  // 根目录项结尾偏移
-    private long root_end_cluster; // 根目录项结尾出口就
+    private long endOffset;  // 目录项结尾偏移
+    private long endCluster; // 目录项结尾簇
 
     public ExFatFile(){
 
     }
-    public ExFatFile(String name){
-        this.name = name;
+    public ExFatFile(String absolutePath){
+        this.absolutePath = absolutePath;
+        String[] paths = absolutePath.split("/");
+        String name ="";
+        if(paths.length == 0){
+            name = "/";
+        }else if(paths.length > 1){
+            name = paths[paths.length-1];
+        }
+        this.name =name;
     }
 
-
-    public boolean createFile() throws IOException{
-        ExFatFile file = find(name);
-        if(file !=null ){
-            throw new IOException("文件已经存在 !");
+    public boolean exists() throws IOException{
+        String[] paths = absolutePath.split("/");
+        if(paths.length < 2){
+            return true;
+        }else if(paths.length == 2){
+            return ExFatFileSystem.root.cache.get(absolutePath) != null;
+        }else{
+            boolean flag = false;
+            ExFatFile temp = ExFatFileSystem.root.cache.get(paths[1]);
+            for(int i = 2; i<paths.length ; i++){
+                flag = false;
+                List<ExFatFile>  files = temp.listFiles();
+                for(ExFatFile file : files){
+                    if(file.getName().equals(paths[i])){
+                        temp = file;
+                        flag = true;
+                        break;
+                    }
+                }
+                if(flag){
+                    continue;
+                }else{
+                    return flag;
+                }
+            }
+            return flag;
         }
-        String[] paths = name.split("/");
+    }
+
+    public List<ExFatFile> listFiles() throws IOException{
+        if(!isDirectory){
+            return null;
+        }
+        if(isRoot){
+            return children;
+        }
+        ChildDirectoryParser childParser = new ChildDirectoryParser();
+        childParser.build(this);
+        return children;
+    }
+
+    public boolean createNewFile() throws IOException{
+        if(exists()){
+           return false;
+        }
+        String[] paths = absolutePath.split("/");
         if(paths.length == 2){
             return createRootFile();
         }else if(paths.length > 2){
@@ -71,11 +121,10 @@ public class ExFatFile{
 
 
     public boolean mkdir() throws IOException{
-        ExFatFile file = find(name);
-        if(file !=null ){
-            throw new IOException("目录已经存在 !");
+        if(exists()){
+            return false;
         }
-        String[] paths = name.split("/");
+        String[] paths = absolutePath.split("/");
         if(paths.length == 2){
             return mkRootDir();
         }else if(paths.length > 2){
@@ -89,32 +138,50 @@ public class ExFatFile{
      * @return
      */
     private boolean mkRootDir() throws IOException{
-        String[] paths = name.split("/");
-        String fileName = name.substring(name.lastIndexOf("/")+1, name.length());
-        long root_end_offset = ExFatFileSystem.root.root_end_offset;
-        Log.i(TAG,"filename :"+fileName+" , root_end_offset : "+ Long.toHexString(root_end_offset)+" , cluster :"+ExFatFileSystem.root.root_end_cluster);
+        return createRootFileOrDir(true);
+    }
+
+    /**
+     * 创建根文件
+     * @return
+     */
+    private boolean createRootFile() throws IOException{
+        return createRootFileOrDir(false);
+    }
+
+    private boolean createRootFileOrDir(boolean isDirectory) throws IOException{
+        String[] paths  = absolutePath.split("/");
+        String fileName = absolutePath.substring(absolutePath.lastIndexOf("/")+1, absolutePath.length());
+        long root_end_offset = ExFatFileSystem.root.endOffset;
+        Log.i(TAG,"filename :"+fileName+" , endOffset : "+ Long.toHexString(root_end_offset)+" , cluster :"+ExFatFileSystem.root.endCluster);
 
         int cons = fileName.length()/Constants.ENAME_MAX_LEN + 2;
-        ExFatFile file = new ExFatFile(fileName);
+        ExFatFile file = new ExFatFile(absolutePath);
+        file.setName(fileName);
 
         // 遍历根目录，找到空闲位置写入
         ByteBuffer buffer = ByteBuffer.allocate(Constants.DIR_ENTRY_SIZE);
         buffer.order(ByteOrder.LITTLE_ENDIAN);
 
         // 属性1 标志
-        buffer.put((byte)0x85);
+        buffer.put((byte)Constants.FILE);
 
         // 目录项 数目
         buffer.put((byte)cons);
 
         long checksum_offset = root_end_offset + 2; // 记录下校验码偏移
 
-        // 校验和
+        // 校验和 先填空
         buffer.put((byte)0x0);
         buffer.put((byte)0x0);
 
         // 文件属性
-        buffer.put(Constants.ATTRIB_DIR);
+        if(isDirectory){
+            buffer.put(Constants.ATTRIB_DIR);
+        }else{
+            buffer.put(Constants.ATTRIB_ARCH);
+        }
+
         buffer.put((byte)0);
         buffer.put((byte)0);
         buffer.put((byte)0);
@@ -129,7 +196,7 @@ public class ExFatFile{
         // c/m centiseconds
         buffer.put((byte)0x0);
         buffer.put((byte)0x0);
-        // 时区
+        // 时区 上海
         buffer.put((byte)0xa0);
         buffer.put((byte)0xa0);
         buffer.put((byte)0xa0);
@@ -142,7 +209,7 @@ public class ExFatFile{
         buffer.put((byte)0);
         buffer.put((byte)0);
 
-        int startCheckSum = startChecksum(buffer);
+        int startCheckSum = ExFatUtil.startChecksum(buffer);
 
         buffer.flip();
         ExFatFileSystem.da.write(buffer,root_end_offset);
@@ -150,80 +217,71 @@ public class ExFatFile{
         buffer.clear();
 
         // 标志位
-        buffer.put((byte)0xc0);
+        buffer.put((byte)Constants.StreamExtension);
+
+        // 文件碎片标志 03H 连续存放 没有碎片 01H 有碎片
         buffer.put((byte)0x03);
+
+        // 保留
         buffer.put((byte)0);
-        buffer.put((byte)0x05);
-        buffer.put((byte)0x34);
-        buffer.put((byte)0x0e);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0x80);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0x08);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0x80);
+
+        // 文件字符数
+        buffer.put((byte)fileName.length());
+
+        // 文件名 HASH
+        buffer.putInt(ExFatUtil.hashName(fileName));
+
+        // 文件大小
+        if(isDirectory){
+            buffer.putLong(ExFatUtil.getBytesPerCluster()); // 分配一个簇
+        }else{
+            buffer.putLong(0L);                             // 新文件大小为0
+        }
+
+        // 保留
         buffer.put((byte)0);
         buffer.put((byte)0);
         buffer.put((byte)0);
         buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        int addCheckSum = addChecksum(startCheckSum,buffer);
+
+        // 起始簇号
+
+        long freeCluster = AllocationBitmap.getNextFreeCluster();
+        buffer.putInt((int)freeCluster);
+
+        // 文件大小
+        buffer.putLong(ExFatUtil.getBytesPerCluster()); // 分配一个簇
+
+        int addCheckSum = ExFatUtil.addChecksum(startCheckSum,buffer);
         buffer.flip();
         ExFatFileSystem.da.write(buffer,root_end_offset);
         root_end_offset  = root_end_offset+Constants.DIR_ENTRY_SIZE;
         buffer.clear();
 
-        // 属性3
-        buffer.put((byte)0xc1);
-        buffer.put((byte)0);
-        buffer.put((byte)0x68);
-        buffer.put((byte)0);
-        buffer.put((byte)0x65);
-        buffer.put((byte)0);
-        buffer.put((byte)0x6c);
-        buffer.put((byte)0);
-        buffer.put((byte)0x6c);
-        buffer.put((byte)0);
-        buffer.put((byte)0x6f);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        buffer.put((byte)0);
-        addCheckSum = addChecksum(addCheckSum,buffer);
-        buffer.flip();
-        ExFatFileSystem.da.write(buffer,root_end_offset);
+        // 属性3 如果文件名称太长,则存在多个属性3
+        int count = fileName.length()/Constants.ENAME_MAX_LEN +1;
+        int index = 0;
+        for(int i = 0  ; i < count ; i++){
+            // 属性3 标志
+            buffer.put((byte)Constants.FileName);
+            // 保留
+            buffer.put((byte)0);
+            for(int j = 0 ; j<Constants.ENAME_MAX_LEN ; j++){
+                if( index < fileName.length()){
+                    buffer.putShort((short)(fileName.charAt(index) & 0xffff));
+                }else{
+                    buffer.putShort((short)0);
+                }
+                index++;
+
+            }
+            addCheckSum = ExFatUtil.addChecksum(addCheckSum,buffer);
+            buffer.flip();
+            ExFatFileSystem.da.write(buffer,root_end_offset);
+            root_end_offset  = root_end_offset+Constants.DIR_ENTRY_SIZE;
+            buffer.clear();
+        }
+
 
         // 写入校验码
         ByteBuffer checkSumBuffer = ByteBuffer.allocate(2);
@@ -232,23 +290,12 @@ public class ExFatFile{
         checkSumBuffer.flip();
         ExFatFileSystem.da.write(checkSumBuffer,checksum_offset);
 
-        AllocationBitmap.useCluster(0x8);
+        AllocationBitmap.useCluster(freeCluster); // 将空闲簇置为已使用
         ExFatFileSystem.da.flush(); // 最后刷新下文件系统
 
-        root_end_offset  = root_end_offset+Constants.DIR_ENTRY_SIZE;
-        ExFatFileSystem.root.root_end_offset = root_end_offset;
+        ExFatFileSystem.root.endOffset = root_end_offset;
         ExFatFileSystem.root.addFile(file);
         ExFatFileSystem.root.addCache(file.getName(),file);
-
-        return true;
-    }
-
-    /**
-     * 创建根文件
-     * @return
-     */
-    private boolean createRootFile(){
-        ExFatFile file = new ExFatFile();
 
         return true;
     }
@@ -257,38 +304,220 @@ public class ExFatFile{
      * 创建子目录
      * @return
      */
-    private boolean mkChildDir(){
-        return true;
+    private boolean mkChildDir() throws IOException{
+        return createChildFileOrDir(true);
+    }
+
+    public ExFatFile findFile(String absolutePath) throws IOException{
+        String[] paths = absolutePath.split("/");
+        if(paths.length ==0 ){ //
+            return ExFatFileSystem.root;
+        }if(paths.length ==2 ){ //
+            return ExFatFileSystem.root.getCache(paths[1]);
+        }else {
+            boolean flag = false;
+            ExFatFile temp = ExFatFileSystem.root.getCache(paths[1]);
+            for(int i = 2; i<paths.length ; i++){
+                flag = false;
+                Log.i(TAG,"path => "+ paths[i]);
+                List<ExFatFile>  files = temp.listFiles();
+                for(ExFatFile file : files){
+                    if(file.getName().equals(paths[i])){
+                        Log.i(TAG,"file => "+ paths[i]+" checkSum =>"+Integer.toHexString(file.getFirstEntry().getCheckSum()));
+                        temp = file;
+                        flag = true;
+                        break;
+                    }
+                }
+                if(flag){
+                    continue;
+                }else{
+                    return  null;
+                }
+            }
+            if(flag){
+                return temp;
+            }else{
+                return null;
+            }
+        }
     }
 
     /**
      * 创建子文件
      * @return
      */
-    private boolean createChildFile(){
-        return true;
+    private boolean createChildFile() throws IOException{
+        return createChildFileOrDir(false);
     }
 
-    public ExFatFile find(String path) {
-        String[] paths = path.split("/");
-        if(paths.length ==0 ){ //
-            return this;
-        }if(paths.length ==2 ){ //
-            return cache.get(paths[1]);
-        }else {
-            return cache.get(paths[1]).find(path.substring(paths[1].length()+1,path.length()));
+    private boolean createChildFileOrDir(boolean isDirectory) throws IOException{
+        String[] paths = absolutePath.split("/");
+        if(exists()){
+            return false;
         }
+        ExFatFile parentFile = findFile(absolutePath.substring(0,absolutePath.lastIndexOf("/")));
+        if(parentFile == null ){
+            throw new IOException("parent file is not exist ");
+        }else{
+            String fileName = absolutePath.substring(absolutePath.lastIndexOf("/")+1, absolutePath.length());
+            long root_end_offset = parentFile.endOffset;
+            Log.i(TAG,"filename :"+fileName+" , endOffset : "+ Long.toHexString(root_end_offset)+" , cluster :"+parentFile.endCluster);
+
+            int cons = fileName.length()/Constants.ENAME_MAX_LEN + 2;
+            ExFatFile file = new ExFatFile(absolutePath);
+            file.setName(fileName);
+
+            // 遍历根目录，找到空闲位置写入
+            ByteBuffer buffer = ByteBuffer.allocate(Constants.DIR_ENTRY_SIZE);
+            buffer.order(ByteOrder.LITTLE_ENDIAN);
+
+            // 属性1 标志
+            buffer.put((byte)Constants.FILE);
+
+            // 目录项 数目
+            buffer.put((byte)cons);
+
+            long checksum_offset = root_end_offset + 2; // 记录下校验码偏移
+
+            // 校验和 先填空
+            buffer.put((byte)0x0);
+            buffer.put((byte)0x0);
+
+            // 文件属性
+            if(isDirectory){
+                buffer.put(Constants.ATTRIB_DIR);
+            }else{
+                buffer.put(Constants.ATTRIB_ARCH);
+            }
+
+            buffer.put((byte)0);
+            buffer.put((byte)0);
+            buffer.put((byte)0);
+
+            // 创建时间
+            buffer.putInt(EntryTimes.UnixToExfat());
+            // 修改时间
+            buffer.putInt(EntryTimes.UnixToExfat());
+            // 最后访问时间
+            buffer.putInt(EntryTimes.UnixToExfat());
+
+            // c/m centiseconds
+            buffer.put((byte)0x0);
+            buffer.put((byte)0x0);
+            // 时区 上海
+            buffer.put((byte)0xa0);
+            buffer.put((byte)0xa0);
+            buffer.put((byte)0xa0);
+            // byte7 保留位
+            buffer.put((byte)0);
+            buffer.put((byte)0);
+            buffer.put((byte)0);
+            buffer.put((byte)0);
+            buffer.put((byte)0);
+            buffer.put((byte)0);
+            buffer.put((byte)0);
+
+            int startCheckSum = ExFatUtil.startChecksum(buffer);
+
+            buffer.flip();
+            ExFatFileSystem.da.write(buffer,root_end_offset);
+            root_end_offset  = root_end_offset+Constants.DIR_ENTRY_SIZE;
+            buffer.clear();
+
+            // 标志位
+            buffer.put((byte)Constants.StreamExtension);
+
+            // 文件碎片标志 03H 连续存放 没有碎片 01H 有碎片
+            buffer.put((byte)0x03);
+
+            // 保留
+            buffer.put((byte)0);
+
+            // 文件字符数
+            buffer.put((byte)fileName.length());
+
+            // 文件名 HASH
+            buffer.putInt(ExFatUtil.hashName(fileName));
+
+            // 文件大小
+            if(isDirectory){
+                buffer.putLong(ExFatUtil.getBytesPerCluster()); // 分配一个簇
+            }else{
+                buffer.putLong(0L);                             // 新文件大小为0
+            }
+
+            // 保留
+            buffer.put((byte)0);
+            buffer.put((byte)0);
+            buffer.put((byte)0);
+            buffer.put((byte)0);
+
+            // 起始簇号
+
+            long freeCluster = AllocationBitmap.getNextFreeCluster();
+            buffer.putInt((int)freeCluster);
+
+            // 文件大小
+            buffer.putLong(ExFatUtil.getBytesPerCluster()); // 分配一个簇
+
+            int addCheckSum = ExFatUtil.addChecksum(startCheckSum,buffer);
+            buffer.flip();
+            ExFatFileSystem.da.write(buffer,root_end_offset);
+            root_end_offset  = root_end_offset+Constants.DIR_ENTRY_SIZE;
+            buffer.clear();
+
+            // 属性3 如果文件名称太长,则存在多个属性3
+            int count = fileName.length()/Constants.ENAME_MAX_LEN +1;
+            int index = 0;
+            for(int i = 0  ; i < count ; i++){
+                // 属性3 标志
+                buffer.put((byte)Constants.FileName);
+                // 保留
+                buffer.put((byte)0);
+                for(int j = 0 ; j<Constants.ENAME_MAX_LEN ; j++){
+                    if( index < fileName.length()){
+                        buffer.putShort((short)(fileName.charAt(index) & 0xffff));
+                    }else{
+                        buffer.putShort((short)0);
+                    }
+                    index++;
+
+                }
+                addCheckSum = ExFatUtil.addChecksum(addCheckSum,buffer);
+                buffer.flip();
+                ExFatFileSystem.da.write(buffer,root_end_offset);
+                root_end_offset  = root_end_offset+Constants.DIR_ENTRY_SIZE;
+                buffer.clear();
+            }
+
+
+            // 写入校验码
+            ByteBuffer checkSumBuffer = ByteBuffer.allocate(2);
+            checkSumBuffer.order(ByteOrder.LITTLE_ENDIAN);
+            checkSumBuffer.putShort((short)addCheckSum);
+            checkSumBuffer.flip();
+            ExFatFileSystem.da.write(checkSumBuffer,checksum_offset);
+
+            AllocationBitmap.useCluster(freeCluster); // 将空闲簇置为已使用
+            ExFatFileSystem.da.flush(); // 最后刷新下文件系统
+
+            parentFile.endOffset = root_end_offset;
+            parentFile.addFile(file);
+            parentFile.addCache(file.getName(),file);
+        }
+        return true;
     }
 
 
     public boolean delete() throws IOException {
         ByteBuffer buffer = ByteBuffer.allocate(1);
         buffer.order(ByteOrder.LITTLE_ENDIAN);
-        Log.i(TAG,"attr1 offset => "+ Long.toHexString(entry.getOffset()));
+        Log.i(TAG,"attr1 offset => "+ Long.toHexString(firstEntry.getOffset()));
         // 属性1标志置为删除
         buffer.put((byte)Constants.FILE_DEL);
         buffer.flip();
-        ExFatFileSystem.da.write(buffer,entry.getOffset());
+        ExFatFileSystem.da.write(buffer, firstEntry.getOffset());
 
         // 属性2标志置为删除
         Log.i(TAG,"attr2 offset => "+ Long.toHexString(secondEntry.getOffset()));
@@ -305,34 +534,10 @@ public class ExFatFile{
             buffer.flip();
             ExFatFileSystem.da.write(buffer,nameEntry.getOffset());
         }
-
         return true;
     }
 
 
-    private int startChecksum(ByteBuffer buffer) {
-        buffer.flip();
-        int result = 0;
-        for (int i = 0; i < Constants.DIR_ENTRY_SIZE; i++) {
-            final int b = DeviceAccess.getUint8(buffer);
-            if ((i == 2) || (i == 3)) {
-                continue;
-            }
-            result = ((result << 15) | (result >> 1)) + b;
-            result &= 0xffff;
-        }
-        return result;
-    }
-
-    private int addChecksum(int sum,ByteBuffer buffer) {
-        buffer.flip();
-        for (int i = 0; i < Constants.DIR_ENTRY_SIZE ; i++) {
-            final int b = DeviceAccess.getUint8(buffer);
-            sum = ((sum << 15) | (sum >> 1)) + b;
-            sum &= 0xffff;
-        }
-        return sum;
-    }
 
     public List<ExFatFile> getChildren(){
         return children;
@@ -344,8 +549,9 @@ public class ExFatFile{
 
     public void updateCache() {
         for(ExFatFile file : children){
-            file.name = file.entry.getName();
+            file.name = file.firstEntry.getName();
             addCache(file.name,file);
+            ExFatCache.extFatFileCache.put("/"+file.name,file);
         }
     }
     private void addCache(String name , ExFatFile exFatFile){
@@ -356,8 +562,8 @@ public class ExFatFile{
         return cache.get(name);
     }
 
-    public void setEntry(ExFatFileEntry entry){
-        this.entry = entry;
+    public void setFirstEntry(ExFatFileEntry firstEntry){
+        this.firstEntry = firstEntry;
     }
 
     public String toString(){
@@ -378,8 +584,16 @@ public class ExFatFile{
         return isDirectory;
     }
 
+    public long getFileInfoCluster() {
+        return fileInfoCluster;
+    }
+
+    public void setFileInfoCluster(long fileInfoCluster) {
+        this.fileInfoCluster = fileInfoCluster;
+    }
+
     public long length() {
-        return entry.getLength();
+        return firstEntry.getLength();
     }
 
     public String getName(){
@@ -418,8 +632,8 @@ public class ExFatFile{
         this.fileCluster = fileCluster;
     }
 
-    public ExFatFileEntry getEntry() {
-        return entry;
+    public ExFatFileEntry getFirstEntry() {
+        return firstEntry;
     }
 
     public StreamExtensionEntry getSecondEntry() {
@@ -438,19 +652,19 @@ public class ExFatFile{
         this.thirdsEntry = thirdsEntry;
     }
 
-    public long getRoot_end_offset() {
-        return root_end_offset;
+    public long getEndOffset() {
+        return endOffset;
     }
 
-    public void setRoot_end_offset(long root_end_offset) {
-        this.root_end_offset = root_end_offset;
+    public void setEndOffset(long endOffset) {
+        this.endOffset = endOffset;
     }
 
-    public long getRoot_end_cluster() {
-        return root_end_cluster;
+    public long getEndCluster() {
+        return endCluster;
     }
 
-    public void setRoot_end_cluster(long root_end_cluster) {
-        this.root_end_cluster = root_end_cluster;
+    public void setEndCluster(long endCluster) {
+        this.endCluster = endCluster;
     }
 }

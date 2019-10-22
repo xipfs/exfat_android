@@ -16,6 +16,7 @@ import android.util.Log;
 
 import com.lenovo.exfat.core.FileSystemFactory;
 import com.lenovo.exfat.core.FileSystem;
+import com.lenovo.exfat.core.fs.ExFatFileSystem;
 import com.lenovo.exfat.usb.UsbCommunicationInfo;
 import com.lenovo.exfat.usb.UsbMassStorageDevice;
 
@@ -124,7 +125,18 @@ public class MainActivity extends AppCompatActivity {
         UsbCommunicationInfo usbCommunicationInfo = massStorageDevice.createUsbCommunication();
         // 创建文件系统
         Log.i(TAG,"3. 开始创建文件系统");
-        FileSystem fs = FileSystemFactory.createFileSystem(usbCommunicationInfo);
+        ExFatFileSystem fs = (ExFatFileSystem)FileSystemFactory.createFileSystem(usbCommunicationInfo);
+
+        //9. test find read delete file
+
+        //fs.testExist();
+        //fs.testListFile();
+        //fs.testFindFile();
+        //fs.testReadFile();
+        //fs.testDeleteFile();
+        //fs.testCreateFile();
+        //fs.testMkdir();
+        fs.testWriteFile();
     }
 
 

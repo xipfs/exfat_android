@@ -20,6 +20,10 @@ public class ExFatBuffer {
         buffer.order(ByteOrder.LITTLE_ENDIAN);
     }
 
+    public ExFatBuffer(ByteBuffer buffer){
+        this.buffer = buffer;
+    }
+
     public void clear(){
         buffer.clear();
     }
@@ -35,4 +39,5 @@ public class ExFatBuffer {
     public void setBuffer(ByteBuffer buffer) {
         this.buffer = buffer;
     }
+
 }

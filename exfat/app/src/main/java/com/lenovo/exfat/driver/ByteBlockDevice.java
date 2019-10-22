@@ -85,7 +85,6 @@ public class ByteBlockDevice implements  BlockDeviceDriver{
             targetBlockDevice.write(devOffset, tmp);
             devOffset++;
         }
-
         if (src.remaining() > 0) {
             ByteBuffer buffer;
             if (src.remaining() % blockSize != 0) {

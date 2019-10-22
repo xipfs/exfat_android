@@ -1,6 +1,8 @@
 package com.lenovo.exfat.core.fs.directory;
 
 
+import java.nio.ByteBuffer;
+
 /**
  * 文件目录项信息，存放文件元信息
  *
@@ -21,10 +23,9 @@ public class ExFatFileEntry {
     private long fileCluster;   // 文件簇号
     private String name;
 
-    private long offset;        // 文件目录项偏移
+    private int offset;        //  文件目录项在簇中偏移
+    private long cluster;       // 文件目录项簇号
     private boolean end;
-
-
 
 
     private StringBuilder sb =new StringBuilder();        // 文件名
@@ -118,11 +119,19 @@ public class ExFatFileEntry {
         this.times = times;
     }
 
-    public long getOffset() {
+    public int getOffset() {
         return offset;
     }
 
-    public void setOffset(long offset) {
+    public void setOffset(int offset) {
         this.offset = offset;
+    }
+
+    public long getCluster() {
+        return cluster;
+    }
+
+    public void setCluster(long cluster) {
+        this.cluster = cluster;
     }
 }

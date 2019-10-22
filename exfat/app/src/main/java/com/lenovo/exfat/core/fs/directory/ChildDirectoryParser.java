@@ -22,24 +22,27 @@ import java.nio.ByteOrder;
 public class ChildDirectoryParser {
     private static final String TAG = ChildDirectoryParser.class.getSimpleName();
 
-
-
     private ByteBuffer buffer;
 
-    private long offset; // 偏移位置
+    private long offset;         // 磁盘偏移位置
+    private int clusterOffset; //  簇中偏移位置
 
     private FatEntry fatEntry;
 
     private ExFatFileEntry fileEntry;  // 文件目录项信息
     private ExFatFile  exFatFile;      // 文件
+    private long end_cluster;
+
 
     public ChildDirectoryParser() {
         buffer = ByteBuffer.allocate(Constants.DIR_ENTRY_SIZE);
         buffer.order(ByteOrder.LITTLE_ENDIAN);
     }
-    public void build(ExFatFile exFatFile) throws IOException {
-        fatEntry = Fat.getFatEntryByCluster(exFatFile.getFileCluster());
-        offset =  ExFatUtil.clusterToOffset(exFatFile.getFileCluster());
+    public void build(ExFatFile root) throws IOException {
+        fatEntry = Fat.getFatEntryByCluster(root.getFileCluster());
+        offset =  ExFatUtil.clusterToOffset(root.getFileCluster());
+        clusterOffset = 0;
+        end_cluster = root.getFileCluster();
         long oldOffset = offset;  // 保存原来的偏移
         while(true){
             // 如果处理完一个簇,需要判断簇是否连续,如果不连续需要跳到下一个簇进行处理
@@ -47,12 +50,16 @@ public class ChildDirectoryParser {
                 long nextCluster = fatEntry.getNextCluster();
                 if(nextCluster == 0){
                     Log.i(TAG,"处理连续簇根目录信息");
+                    end_cluster++;
                     oldOffset = offset;
+                    clusterOffset=0;
                 }else{
                     Log.i(TAG,"处理非连续簇根目录信息 next_cluster："+Long.toHexString(nextCluster));
                     offset = ExFatUtil.clusterToOffset(fatEntry.getNextCluster());
                     fatEntry = Fat.getFatEntryByCluster(fatEntry.getNextCluster());
                     oldOffset = offset;
+                    end_cluster = nextCluster;
+                    clusterOffset=0;
                 }
             }
             // 读取根目录项
@@ -65,12 +72,14 @@ public class ChildDirectoryParser {
             } else if (entryType == Constants.UPCASE) {
             } else if (entryType == Constants.FILE) {
                 Log.i(TAG,"parse child file ");
-                parseFile(exFatFile);
+                parseFile(root);
             }else if (entryType == Constants.StreamExtension) {
                 parseStreamExtension(); // 属性2
             }else if (entryType == Constants.FileName) {
                 parseFileName();       // 属性3
             }else if (entryType == Constants.EOD) {
+                root.setEndCluster(end_cluster);
+                root.setEndOffset(offset);
                 break;
             }else if (entryType == Constants.FILE_DEL) {
                 Log.i(TAG,"start parse file del ");
@@ -91,25 +100,21 @@ public class ChildDirectoryParser {
             }
             // 下一个目录项
             offset += Constants.DIR_ENTRY_SIZE;
+            clusterOffset +=Constants.DIR_ENTRY_SIZE;;
             buffer.clear();
         }
-        exFatFile.updateCache();
-        for(ExFatFile child:exFatFile.getChildren()){
-            if(child.isDirectory()){
-                build(child);
-            }else{
-                Log.i(TAG,child.getName()+" , cluster :"+child.getFileCluster());
-            }
-        }
-
+        root.updateCache();
     }
-    private void parseFile(ExFatFile file) throws IOException{
+
+    private void parseFile(ExFatFile root) throws IOException{
 
         fileEntry = new ExFatFileEntry();
         exFatFile = new ExFatFile();
-        exFatFile.setEntry(fileEntry);
+        exFatFile.setFirstEntry(fileEntry);
         exFatFile.setRoot(false);
-        file.addFile(exFatFile);
+        exFatFile.setFileInfoCluster(end_cluster);  // 设置目录项所在的簇
+
+        root.addFile(exFatFile);
 
         // 处理属性1
         int conts = DeviceAccess.getUint8(buffer);          // conts 如果为2，表明后面还有2个目录项，分别是属性2 和 属性3
@@ -123,35 +128,40 @@ public class ChildDirectoryParser {
         skip(2); /* unknown */
         EntryTimes times = EntryTimes.read(buffer);
         skip(7); /* unknown */
-
+        Log.i(TAG,"parse check sum :"+Integer.toHexString(checkSum));
         fileEntry.setConts(conts);
         fileEntry.setAttrib(attrib);
         fileEntry.setCheckSum(checkSum);
         fileEntry.setTimes(times);
-        fileEntry.setOffset(offset);
-
+        fileEntry.setOffset(clusterOffset); // 簇中的偏移
     }
 
     /**
      * 处理属性2
      */
     public void parseStreamExtension(){
+
         StreamExtensionEntry entry = new StreamExtensionEntry();
-        entry.setOffset(offset);
+        entry.setCluster(end_cluster);
+        entry.setOffset(clusterOffset);
+
         final int flag = DeviceAccess.getUint8(buffer);  // 碎片标志
         skip(1); /* unknown */
         int nameLen = DeviceAccess.getUint8(buffer);
         final int nameHash = DeviceAccess.getUint16(buffer);
         skip(2); /* unknown */
+        Log.i(TAG,"position : "+buffer.position());
         final long realSize = DeviceAccess.getUint64(buffer);
         skip(4); /* unknown */
         final long fileCluster = DeviceAccess.getUint32(buffer);
+        Log.i(TAG,"position : "+buffer.position());
         final long size = DeviceAccess.getUint64(buffer);
         fileEntry.setFlag(flag);
         fileEntry.setNameLen(nameLen);
         fileEntry.setNameHash(nameHash);
         fileEntry.setLength(realSize);
         fileEntry.setFileCluster(fileCluster);
+
         exFatFile.setFileCluster(fileCluster);
         exFatFile.setLength(realSize);
         exFatFile.setSecondEntry(entry);
@@ -163,7 +173,8 @@ public class ChildDirectoryParser {
      */
     public void parseFileName(){
         FileNameEntry entry = new FileNameEntry();
-        entry.setOffset(offset);
+        entry.setOffset(clusterOffset);
+        entry.setCluster(end_cluster);
         // 处理属性3, 属性3存在多个，需要根据 conts 多次处理
         /* read file name */
         skip(1); /* unknown */

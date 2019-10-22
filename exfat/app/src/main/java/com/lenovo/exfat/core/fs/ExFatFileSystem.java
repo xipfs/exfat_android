@@ -7,9 +7,12 @@ import com.lenovo.exfat.core.fs.directory.ChildDirectoryParser;
 import com.lenovo.exfat.core.fs.directory.RootDirectoryParser;
 import com.lenovo.exfat.core.io.ExFatBuffer;
 import com.lenovo.exfat.core.io.ExFatFileInputStream;
+import com.lenovo.exfat.core.io.ExFatFileOutputStream;
 import com.lenovo.exfat.core.util.Constants;
+import com.lenovo.exfat.core.util.ExFatCache;
 import com.lenovo.exfat.driver.BlockDeviceDriver;
 
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.List;
 
@@ -51,7 +54,7 @@ public class ExFatFileSystem implements FileSystem {
         root = rootParser.build();
         Log.i(TAG,root.toString());
 
-        //4. 递归解析子目录文件
+        /*4. 递归解析子目录文件
         Log.i(TAG,"6.4 Build exFAT Child Directory Structure");
         ChildDirectoryParser childParser = new ChildDirectoryParser();
         for(ExFatFile child:root.getChildren()){
@@ -61,27 +64,78 @@ public class ExFatFileSystem implements FileSystem {
                 Log.i(TAG,child.getName()+", cluster "+child.getFileCluster());
             }
         }
-
-        //9. test find read delete file
-        //testFindFile();
-        //testReadFile();
-        //testDeleteFile();
-        testCreateFile();
-        //testWriteFile();
-
+        */
     }
 
-    public ExFatFile findFile(String path) {
-        if(path == null || path.equals("/") || path.trim().equals("")){
+    public ExFatFile findFile(String absolutePath) throws IOException{
+        String[] paths = absolutePath.split("/");
+        if(paths.length ==0 ){ //
             return root;
-        }else{
-            return root.find(path);
+        }if(paths.length ==2 ){ //
+            return root.getCache(paths[1]);
+        }else {
+            boolean flag = false;
+            ExFatFile temp = ExFatFileSystem.root.getCache(paths[1]);
+            for(int i = 2; i<paths.length ; i++){
+                flag = false;
+                Log.i(TAG,"path => "+ paths[i]);
+                List<ExFatFile>  files = temp.listFiles();
+                for(ExFatFile file : files){
+                    if(file.getName().equals(paths[i])){
+                        Log.i(TAG,"file => "+ paths[i]);
+                        temp = file;
+                        flag = true;
+                        break;
+                    }
+                }
+                if(flag){
+                    continue;
+                }else{
+                    return  null;
+                }
+            }
+            if(flag){
+                return temp;
+            }else{
+                return null;
+            }
         }
     }
+
+    //=============================== test method ==================================
+
+    public void testExist() throws IOException{
+        ExFatFile file = new ExFatFile("/123/456/789/hello.txt");
+        Log.i(TAG,file.getAbsolutePath()+" , exist : "+file.exists());
+       // ExFatFile file2 = new ExFatFile("/abc/a.txt");
+       // Log.i(TAG,file.getAbsolutePath()+" , exist : "+file2.exists());
+    }
+
+    public void testListFile() throws IOException{
+        List<ExFatFile> files = root.listFiles();
+        if(files != null ){
+            for(ExFatFile file : files){
+                Log.i(TAG,"find file "+file.getName());
+                List<ExFatFile> files2 = file.listFiles();
+                if(files2 != null){
+                    for(ExFatFile file2 : files2){
+                        Log.i(TAG,"find file "+file2.getName());
+                        List<ExFatFile> files3 = file2.listFiles();
+                        if(files3 != null){
+                            for(ExFatFile file3 : files3){
+                                Log.i(TAG,"find file "+file3.getName());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     public void testFindFile() throws IOException{
-        ExFatFile file = findFile("/hello");
+        ExFatFile file = findFile("/123/456/789/hello.txt");
         if(file !=null ){
-            Log.i(TAG,"find file "+file.getName().equals("hello"));
+            Log.i(TAG,"find file "+file.getName().equals("hello.txt"));
             Log.i(TAG,"file length = "+file.length());
             long cluster = file.getFileCluster();
             FatEntry fatEntry = Fat.getFatEntryByCluster(cluster);
@@ -105,7 +159,6 @@ public class ExFatFileSystem implements FileSystem {
             buffer.getBuffer().flip();
             buffer.getBuffer().get(data,offset,read);
             offset = offset+read;
-
         }
         Log.i(TAG,new String(data));
     }
@@ -117,11 +170,26 @@ public class ExFatFileSystem implements FileSystem {
     }
 
     public void testCreateFile() throws IOException{
-        ExFatFile file = new ExFatFile("/hello");
+        ExFatFile file = new ExFatFile("/helloworldthisislongfilename");
         file.mkdir();
+        ExFatFile file02 = new ExFatFile("/hello.txt");
+        file02.createNewFile();
     }
 
-    public void testWriteFile(){
+    public void testMkdir() throws IOException{
+        //ExFatFile file = new ExFatFile("/hello/world");
+        //file.mkdir();
+        ExFatFile file2 = new ExFatFile("/hello/1.txt");
+        file2.createNewFile();
+    }
+    public void testWriteFile() throws IOException{
+        ExFatFile file = findFile("/hello/1.txt");
+        ExFatFileOutputStream out = new ExFatFileOutputStream(file);
+
+        String str = "this is test write file";
+        Log.i(TAG,"str length -> "+str.getBytes().length);
+        out.write(str.getBytes(),str.getBytes().length);
+        out.flush();
 
     }
 

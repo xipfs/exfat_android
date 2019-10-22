@@ -3,6 +3,9 @@ package com.lenovo.exfat.core.fs;
 
 import com.lenovo.exfat.core.util.ExFatUtil;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+
 /**
  * 大写字符文件
  *
@@ -21,16 +24,30 @@ public class UpCaseTable {
     private static long upcaseTableCluster;
     private static long size;
     private static long offset;
-
-    public UpCaseTable() {
-    }
+    private static long chars;
 
     public static void build(long upcaseTableCluster, long size) {
         UpCaseTable.upcaseTableCluster = upcaseTableCluster;
         UpCaseTable.size = size;
+        UpCaseTable.chars = size / 2;
         offset = ExFatUtil.clusterToOffset(upcaseTableCluster);
     }
 
+    public static char toUpperCase(char c) throws IOException {
+        if (c > chars) {
+            return c;
+        } else {
+            return ExFatFileSystem.da.getChar(offset + (c * 2));
+        }
+    }
+
+    public static String toUpperCase(String s) throws IOException {
+        final StringBuilder result = new StringBuilder(s.length());
+        for (char c : s.toCharArray()) {
+            result.append(toUpperCase(c));
+        }
+        return result.toString();
+    }
 
     public String toString(){
         final StringBuilder result = new StringBuilder();

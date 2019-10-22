@@ -5,13 +5,13 @@ import android.util.Log;
 
 import com.lenovo.exfat.core.fs.AllocationBitmap;
 import com.lenovo.exfat.core.fs.DeviceAccess;
-import com.lenovo.exfat.core.fs.DosBootRecord;
 import com.lenovo.exfat.core.fs.ExFatFile;
 import com.lenovo.exfat.core.fs.ExFatFileSystem;
 import com.lenovo.exfat.core.fs.Fat;
 import com.lenovo.exfat.core.fs.FatEntry;
 import com.lenovo.exfat.core.fs.UpCaseTable;
 import com.lenovo.exfat.core.util.Constants;
+import com.lenovo.exfat.core.util.ExFatCache;
 import com.lenovo.exfat.core.util.ExFatUtil;
 
 import java.io.IOException;
@@ -34,8 +34,9 @@ public class RootDirectoryParser {
     private static final String TAG = RootDirectoryParser.class.getSimpleName();
 
     private ByteBuffer buffer;
-    private long rootDirStartCluster;   // 根目录首簇号
-    private long offset;                // 偏移位置
+    private long rootDirStartCluster;          // 根目录首簇号
+    private long rootDirOffset;                // 根目录偏移位置
+    private int offset;                         // 簇中偏移
 
     private ExFatFile root;
     private FatEntry fatEntry;
@@ -52,7 +53,7 @@ public class RootDirectoryParser {
         // 首先跳转到根目录首簇号, 目录项大小固定为32字节
         rootDirStartCluster = Constants.ROOT_DIRECTORY_CLUSTER;
         // 定位根目录偏移
-        offset = ExFatUtil.clusterToOffset(Constants.ROOT_DIRECTORY_CLUSTER);
+        rootDirOffset = ExFatUtil.clusterToOffset(Constants.ROOT_DIRECTORY_CLUSTER);
 
         // 初始化根目录
         root = new ExFatFile("/");
@@ -63,6 +64,7 @@ public class RootDirectoryParser {
         root.setFileCluster(0);
         fatEntry = Fat.getFatEntryByCluster(Constants.ROOT_DIRECTORY_CLUSTER);
         end_cluster = Constants.ROOT_DIRECTORY_CLUSTER;
+        ExFatCache.extFatFileCache.put("/",root);
     }
 
     /**
@@ -72,25 +74,28 @@ public class RootDirectoryParser {
      * @throws IOException
      */
     public ExFatFile build() throws IOException {
-        long oldOffset = offset;  // 保存原来的偏移
+        long oldOffset = rootDirOffset;  // 保存原来的偏移
+        offset = 0;
         while(true){
             // 如果处理完一个簇,需要判断簇是否连续,如果不连续需要跳到下一个簇进行处理
-            if(offset - oldOffset == ExFatUtil.getBytesPerCluster()){
+            if(rootDirOffset - oldOffset == ExFatUtil.getBytesPerCluster()){
                 long nextCluster = fatEntry.getNextCluster();
                 if(nextCluster == 0){
                     Log.i(TAG,"处理连续簇根目录信息");
                     end_cluster ++;
-                    oldOffset = offset;
+                    oldOffset = rootDirOffset;
+                    offset =0;
                 }else{
                     Log.i(TAG,"处理非连续簇根目录信息 next_cluster："+Long.toHexString(nextCluster));
-                    offset = ExFatUtil.clusterToOffset(fatEntry.getNextCluster());
+                    rootDirOffset = ExFatUtil.clusterToOffset(fatEntry.getNextCluster());
                     fatEntry = Fat.getFatEntryByCluster(fatEntry.getNextCluster());
-                    oldOffset = offset;
+                    oldOffset = rootDirOffset;
                     end_cluster = nextCluster;
+                    offset=0;
                 }
             }
             // 读取根目录项
-            ExFatFileSystem.da.read(buffer,offset);
+            ExFatFileSystem.da.read(buffer, rootDirOffset);
             buffer.flip();
             final int entryType = DeviceAccess.getUint8(buffer);
             if (entryType == Constants.LABEL) {
@@ -106,8 +111,8 @@ public class RootDirectoryParser {
                 // Log.i(TAG,"start parse file ");
                 parseFile();
             } else if (entryType == Constants.EOD) {
-                root.setRoot_end_cluster(end_cluster);
-                root.setRoot_end_offset(offset);
+                root.setEndCluster(end_cluster);
+                root.setEndOffset(rootDirOffset);
                 Log.i(TAG,"start parse end ");
                 break;
             }else if (entryType == Constants.NO_LABEL) {
@@ -134,6 +139,7 @@ public class RootDirectoryParser {
                 Log.i(TAG,"unknown entry type 0x" + Integer.toHexString(entryType));
             }
             // 下一个目录项
+            rootDirOffset += Constants.DIR_ENTRY_SIZE;
             offset += Constants.DIR_ENTRY_SIZE;
             buffer.clear();
         }
@@ -172,7 +178,7 @@ public class RootDirectoryParser {
         skip(19); /* unknown content */
         final long bitmapCluster = DeviceAccess.getUint32(buffer); // 起始簇号
         final long size = DeviceAccess.getUint64(buffer);         // 文件大小
-        Log.i(TAG,"Bitmap Cluster : "+bitmapCluster+" , offset : "+Long.toHexString(ExFatUtil.clusterToOffset(bitmapCluster)));
+        Log.i(TAG,"Bitmap Cluster : "+bitmapCluster+" , rootDirOffset : "+Long.toHexString(ExFatUtil.clusterToOffset(bitmapCluster)));
 
         AllocationBitmap.build(bitmapCluster,size);
     }
@@ -240,8 +246,9 @@ public class RootDirectoryParser {
 
         fileEntry = new ExFatFileEntry();
         exFatFile = new ExFatFile();
-        exFatFile.setEntry(fileEntry);
+        exFatFile.setFirstEntry(fileEntry);
         exFatFile.setRoot(false);
+        exFatFile.setFileInfoCluster(end_cluster);  // 保存文件元信息所在的簇
         root.addFile(exFatFile);
 
         // 处理属性1
@@ -256,11 +263,12 @@ public class RootDirectoryParser {
         skip(2); /* unknown */
         EntryTimes times = EntryTimes.read(buffer);
         skip(7); /* unknown */
-        fileEntry.setOffset(offset);   // 记录目录项偏移
+        fileEntry.setOffset(offset);   // 记录簇中目录项偏移
         fileEntry.setConts(conts);
         fileEntry.setAttrib(attrib);
         fileEntry.setCheckSum(checkSum);
         fileEntry.setTimes(times);
+        fileEntry.setCluster(end_cluster);
 
     }
 
@@ -270,7 +278,7 @@ public class RootDirectoryParser {
     public void parseStreamExtension(){
         StreamExtensionEntry entry = new StreamExtensionEntry();
         entry.setOffset(offset);
-
+        entry.setCluster(end_cluster);
         final int flag = DeviceAccess.getUint8(buffer);  // 碎片标志
         skip(1); /* unknown */
         int nameLen = DeviceAccess.getUint8(buffer);
@@ -297,6 +305,7 @@ public class RootDirectoryParser {
     public void parseFileName(){
         FileNameEntry entry = new FileNameEntry();
         entry.setOffset(offset);
+        entry.setCluster(end_cluster);
         // 处理属性3, 属性3存在多个，需要根据 conts 多次处理
         /* read file name */
         skip(1); /* unknown */

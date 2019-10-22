@@ -78,7 +78,7 @@ public class DeviceAccess {
     public void read(ByteBuffer dest, long offset) throws IOException {
         device.read(offset, dest);
     }
-    public void write(ByteBuffer dest, long offset) throws IOException {
+    public synchronized void write(ByteBuffer dest, long offset) throws IOException {
         device.write(offset, dest);
     }
 

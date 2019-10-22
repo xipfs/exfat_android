@@ -7,5 +7,5 @@ import java.util.List;
 
 public interface FileSystem {
     void init() throws IOException;
-    ExFatFile findFile(String path);
+    ExFatFile findFile(String path) throws IOException;
 }
