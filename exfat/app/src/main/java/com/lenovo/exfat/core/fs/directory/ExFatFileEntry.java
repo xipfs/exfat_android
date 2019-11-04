@@ -23,9 +23,9 @@ public class ExFatFileEntry {
     private long fileCluster;   // 文件簇号
     private String name;
 
-    private int offset;        //  文件目录项在簇中偏移
+    private long offset;         // 文件目录项在簇中偏移
     private long cluster;       // 文件目录项簇号
-    private boolean end;
+    private boolean end;        // 是否结束
 
 
     private StringBuilder sb =new StringBuilder();        // 文件名
@@ -41,6 +41,10 @@ public class ExFatFileEntry {
             name = sb.substring(0,nameLen);
             return name;
         }
+    }
+
+    public void setName(String name){
+        this.name = name;
     }
 
     public boolean isEnd(){
@@ -119,11 +123,11 @@ public class ExFatFileEntry {
         this.times = times;
     }
 
-    public int getOffset() {
+    public long getOffset() {
         return offset;
     }
 
-    public void setOffset(int offset) {
+    public void setOffset(long offset) {
         this.offset = offset;
     }
 

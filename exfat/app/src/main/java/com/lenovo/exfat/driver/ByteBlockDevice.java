@@ -29,10 +29,6 @@ public class ByteBlockDevice implements  BlockDeviceDriver{
     }
 
     public void flush() throws IOException{
-        ByteBuffer tmp = ByteBuffer.allocate(blockSize);
-        targetBlockDevice.read(0l, tmp);
-        tmp.flip();
-        targetBlockDevice.write(0l, tmp);
     }
     @Override
     public void init() throws IOException {
@@ -91,6 +87,10 @@ public class ByteBlockDevice implements  BlockDeviceDriver{
                 int rounded = blockSize - src.remaining() % blockSize + src.remaining();
                 buffer = ByteBuffer.allocate(rounded);
                 buffer.limit(rounded);
+                if(byteOffset % blockSize == 0L){
+                    targetBlockDevice.read(devOffset, buffer);
+                }
+                buffer.clear();
                 System.arraycopy(src.array(), src.position(), buffer.array(), 0, src.remaining());
                 src.position(src.limit());
             } else {

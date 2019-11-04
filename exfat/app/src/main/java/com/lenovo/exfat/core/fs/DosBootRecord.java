@@ -1,6 +1,7 @@
 package com.lenovo.exfat.core.fs;
 
 
+
 import com.lenovo.exfat.core.util.Constants;
 import com.lenovo.exfat.core.util.ExFatUtil;
 
@@ -16,7 +17,7 @@ import java.nio.ByteOrder;
  */
 public class DosBootRecord {
 
-    public static final String TAG = DosBootRecord.class.getSimpleName();
+    public static final String TAG ="exfat : "+DosBootRecord.class.getSimpleName();
     public static final int SIZE = 512;
     public static final String OEM_NAME = "EXFAT   ";
 
@@ -35,12 +36,15 @@ public class DosBootRecord {
     public static byte blocksPerClusterBits;	// 每簇扇区数 2^n
     public static byte percentInUse;			// 使用百分比
 
-    public DosBootRecord(){
+    private ExFatFileSystem exFatFileSystem;
+
+    public DosBootRecord(ExFatFileSystem exFatFileSystem){
+        this.exFatFileSystem = exFatFileSystem;
     }
-    public static void build() throws IOException {
+    public void build() throws IOException {
         final ByteBuffer b = ByteBuffer.allocate(SIZE); // 设置 512 字节缓冲区
         b.order(ByteOrder.LITTLE_ENDIAN); // 小端序
-        ExFatFileSystem.da.read(b,0l);
+        exFatFileSystem.da.read(b,0l);
         // 前3个字节为跳转指令 EB 76 90(JMP 76 NOP)
         final byte[] oemBytes = new byte[OEM_NAME.length()];
         b.position(0x03); // 跳过前3字节 检测 OEM 字符串
@@ -92,12 +96,16 @@ public class DosBootRecord {
         Constants.CLUSTER_BLOCKS = blocksPerClusterBits;
         Constants.PERCENT_IN_USE = percentInUse;
 
+        Constants.BytesPerCluster = ExFatUtil.getBytesPerCluster();
+        Constants.BlockSize = ExFatUtil.getBlockSize();
+        Constants.BlocksPerCluster  = ExFatUtil.getBlocksPerCluster();
+
         // 设置簇对应的扇区数目
-        Cluster.SIZE = ExFatUtil.getBlocksPerCluster();
+        Cluster.SIZE = Constants.BlocksPerCluster;
 
     }
 
-    public static String print() {
+    public String print() {
         StringBuilder sb = new StringBuilder();
         sb.append(" \n");
         sb.append("隐藏扇区数: "+ partitionOffset +"\n");

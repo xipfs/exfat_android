@@ -9,13 +9,13 @@ import java.nio.ByteBuffer;
  * @create 2019-10-15 下午1:53
  */
 public class FileNameEntry {
-    private int offset;        // 文件目录项在簇中偏移
+    private long offset;        // 文件目录项在簇中偏移
     private long cluster;       // 文件目录项簇号
-    public int getOffset() {
+    public long getOffset() {
         return offset;
     }
 
-    public void setOffset(int offset) {
+    public void setOffset(long offset) {
         this.offset = offset;
     }
 

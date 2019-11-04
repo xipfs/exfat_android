@@ -1,8 +1,5 @@
 package com.lenovo.exfat.core.util;
 
-
-import android.util.Log;
-
 import com.lenovo.exfat.core.fs.Cluster;
 import com.lenovo.exfat.core.fs.DeviceAccess;
 import com.lenovo.exfat.core.fs.UpCaseTable;
@@ -10,15 +7,8 @@ import com.lenovo.exfat.core.fs.UpCaseTable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-/**
- *
- * exFAT 工具类
- *
- * @auther xiehui
- * @create 2019-10-11 上午11:11
- */
 public class ExFatUtil {
-    private static final String TAG = ExFatUtil.class.getSimpleName();
+    private static final String TAG ="exfat : "+ExFatUtil.class.getSimpleName();
     // 计算簇对应扇区位置
     public static long clusterToBlock(long cluster){
         return Constants.CLUSTER_BLOCK_START +
@@ -39,7 +29,7 @@ public class ExFatUtil {
         da.read(dest, clusterToOffset(cluster));
     }
 
-    public static void writeCluster(DeviceAccess da,ByteBuffer dest, long cluster) throws IOException{
+    public static void writeCluster(DeviceAccess da, ByteBuffer dest, long cluster) throws IOException{
         da.write(dest, clusterToOffset(cluster));
     }
     // 每扇区字节数 2^n
@@ -58,7 +48,7 @@ public class ExFatUtil {
     }
 
     public static  int startChecksum(ByteBuffer buffer) {
-        buffer.flip();
+        buffer.clear();
         int result = 0;
         for (int i = 0; i < Constants.DIR_ENTRY_SIZE; i++) {
             final int b = DeviceAccess.getUint8(buffer);
@@ -72,7 +62,7 @@ public class ExFatUtil {
     }
 
     public static  int addChecksum(int sum,ByteBuffer buffer) {
-        buffer.flip();
+        buffer.clear();
         for (int i = 0; i < Constants.DIR_ENTRY_SIZE ; i++) {
             final int b = DeviceAccess.getUint8(buffer);
             sum = ((sum << 15) | (sum >> 1)) + b;
@@ -87,11 +77,11 @@ public class ExFatUtil {
      * @return
      * @throws IOException
      */
-    public static int hashName(String name) throws IOException {
+    public static int hashName(UpCaseTable upCaseTable,String name) throws IOException {
         int hash = 0;
 
         for (int i = 0; i < name.length(); i++) {
-            final int c =  UpCaseTable.toUpperCase(name.charAt(i));
+            final int c =  upCaseTable.toUpperCase(name.charAt(i));
 
             hash = ((hash << 15) | (hash >> 1)) + (c & 0xff);
             hash &= 0xffff;
@@ -109,4 +99,14 @@ public class ExFatUtil {
         }
         return s1;
     }
+
+    public static long byte2long(byte[] bytes){
+        long i0 = bytes[0] & 0xff;
+        long i1 = (bytes[1] & 0xff) << 8;
+        long i2 = (bytes[2] & 0xff) << 16;
+        long i3 = (bytes[3] & 0xff) << 24;
+        return i0 | i1 | i2 | i3;
+    }
+
+
 }

@@ -1,15 +1,8 @@
 package com.lenovo.exfat.core.util;
 
-
-/**
- * exFAT 文件系统常量
- * 解析 DBR 之后存放这里，方便使用
- *
- * @auther xiehui
- * @create 2019-10-11 上午11:13
- */
 public class Constants {
-    public static String DISK_LABEL;                 // 标签
+
+    public static String DISK_LABEL ="";            // 标签
     public static long TOTAL_BLOCKS;			// 总扇区数
     public static long FAT_BLOCK_START;			// FAT 起始扇区号
     public static int  FAT_BLOCK_COUNT;			// FAT 扇区数
@@ -20,17 +13,21 @@ public class Constants {
     public static byte MINOR_VERSION;		    // 版本号
     public static byte MAJOR_VERSION;
     public static short VOLUME_STATE;  		    // 卷状态
-    public static byte  BLOCK_BITS;				// 每扇区字节数 2^n
-    public static byte CLUSTER_BLOCKS;	        // 每簇扇区数 2^n
-    public static byte PERCENT_IN_USE;			// 使用百分比
+    public static byte  BLOCK_BITS;				     // 每扇区字节数 2^n
+    public static byte CLUSTER_BLOCKS;	             // 每簇扇区数 2^n
+    public static byte PERCENT_IN_USE;			     // 使用百分比
 
+    public static long BytesPerCluster;
+    public static int BlockSize;
+    public static int BlocksPerCluster;
 
-
-    public static final int DIR_ENTRY_SIZE = 32;               // 目录项大小
+    public static final int DIR_ENTRY_SIZE = 32;     // 目录项大小
     public static final int ENAME_MAX_LEN = 15;
     public static final int VALID = 0x80;
     public static final int CONTINUED = 0x40;
     public static final int IMPORTANCE_MASK = 0x20;
+
+    public static final int FAT_ENTRY_SIZE = 4;
 
     //Directory Entry Type
     public static final int EOD =      0x00;
@@ -62,5 +59,4 @@ public class Constants {
     public static final byte ATTRIB_VOLUME = 0x08;   // 00001000 卷簇
     public static final byte ATTRIB_DIR = 0x10;      // 00010000 子目录
     public static final byte ATTRIB_ARCH = 0x20;     // 00100000 存档
-
 }

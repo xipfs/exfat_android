@@ -30,37 +30,65 @@ import java.util.List;
  * @create 2019-10-10 下午4:59
  */
 public class Fat {
-    private static final String TAG = Fat.class.getSimpleName();
+    private static final String TAG = "exfat : "+Fat.class.getSimpleName();
 
     private static final int SIZE = 512;
-    private static final int FAT_ENTRY_SIZE =4;
 
     private static List<FatEntry> entries = new ArrayList<>();
 
-    public Fat() {
+    private ExFatFileSystem exFatFileSystem;
+    public Fat(ExFatFileSystem exFatFileSystem) {
+        this.exFatFileSystem = exFatFileSystem;
     }
 
-    public static void build() throws IOException {
+    public  void build() throws IOException {
+
+        long offset = ExFatUtil.blockToOffset(Constants.FAT_BLOCK_START);
+        Log.i(TAG,Constants.FAT_BLOCK_START+" , "+ Constants.FAT_BLOCK_COUNT+ ","+ExFatUtil.getBlocksPerCluster());
+        // 起始扇区簇对齐 并且扇区数目正好整簇
+        Log.i(TAG,"Fat offset :"+Long.toHexString(offset));
         final ByteBuffer buffer = ByteBuffer.allocate(SIZE); // 每个扇区512字节
         buffer.order(ByteOrder.LITTLE_ENDIAN); // 小端序
-        long offset = ExFatUtil.blockToOffset(Constants.FAT_BLOCK_START);
-        Log.i(TAG,"Fat offset :"+Long.toHexString(offset));
         for(int i = 0 ; i< Constants.FAT_BLOCK_COUNT;i++) {
-            ExFatFileSystem.da.read(buffer,offset);
+            exFatFileSystem.da.read(buffer,offset);
             buffer.flip();
-            for(int j = 0 ; j < buffer.limit()/FAT_ENTRY_SIZE; j++){
+            for(int j = 0 ; j < buffer.limit()/Constants.FAT_ENTRY_SIZE; j++){
                 byte[] values = new byte[4];
                 values[0] = buffer.get();
                 values[1] = buffer.get();
                 values[2] = buffer.get();
                 values[3] = buffer.get();
                 FatEntry entry = new FatEntry(byte2long(values));
+                entry.setOffset(offset);
                 entries.add(entry);
+                offset += Constants.FAT_ENTRY_SIZE;
             }
             buffer.clear();
-            offset +=SIZE;
         }
+        /*
+        if((Constants.FAT_BLOCK_START % ExFatUtil.getBlocksPerCluster()== 0)&&(Constants.FAT_BLOCK_COUNT%ExFatUtil.getBlocksPerCluster() == 0)){
+            Log.i(TAG,"Fat  align offset :"+Long.toHexString(offset));
+            final ByteBuffer buffer = ByteBuffer.allocate(ExFatUtil.getBytesPerCluster()); // 读一个簇
+            buffer.order(ByteOrder.LITTLE_ENDIAN); // 小端序
+            for(int i = 0 ; i< Constants.FAT_BLOCK_COUNT/Constants.CLUSTER_BLOCKS;i++) {
+                exFatFileSystem.da.read(buffer,offset);
+                buffer.flip();
+                for(int j = 0 ; j < buffer.limit()/FAT_ENTRY_SIZE; j++){
+                    byte[] values = new byte[4];
+                    values[0] = buffer.get();
+                    values[1] = buffer.get();
+                    values[2] = buffer.get();
+                    values[3] = buffer.get();
+                    FatEntry entry = new FatEntry(byte2long(values));
+                    entries.add(entry);
+                    offset +=FAT_ENTRY_SIZE;
+                }
+                buffer.clear();
 
+            }
+        }else{
+
+        }*/
     }
 
     /**
@@ -68,10 +96,10 @@ public class Fat {
      * @param cluster
      * @return
      */
-    public static FatEntry getFatEntryByCluster(long cluster){
+    public  FatEntry getFatEntryByCluster(long cluster){
         return entries.get((int)cluster);
     }
-    private static long byte2long(byte[] bytes){
+    private long byte2long(byte[] bytes){
         long i0 = bytes[0] & 0xff;
         long i1 = (bytes[1] & 0xff) << 8;
         long i2 = (bytes[2] & 0xff) << 16;

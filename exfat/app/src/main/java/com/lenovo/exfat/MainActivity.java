@@ -130,13 +130,13 @@ public class MainActivity extends AppCompatActivity {
         //9. test find read delete file
 
         //fs.testExist();
-        //fs.testListFile();
+        fs.testListFile();
         //fs.testFindFile();
         //fs.testReadFile();
         //fs.testDeleteFile();
         //fs.testCreateFile();
         //fs.testMkdir();
-        fs.testWriteFile();
+        //fs.testWriteFile();
     }
 
 

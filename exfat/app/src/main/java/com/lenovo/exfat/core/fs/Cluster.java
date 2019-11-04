@@ -2,7 +2,6 @@ package com.lenovo.exfat.core.fs;
 
 
 import com.lenovo.exfat.core.util.Constants;
-import com.lenovo.exfat.core.util.ExFatUtil;
 
 import java.io.IOException;
 

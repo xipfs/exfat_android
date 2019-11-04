@@ -1,61 +1,84 @@
+/*
+ * (C) Copyright 2014 mjahnen <jahnen@in.tum.de>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * 
+ */
+
 package com.lenovo.exfat.core;
 
-import android.util.Log;
-
-import com.lenovo.exfat.core.fs.ExFatFileSystem;
-import com.lenovo.exfat.core.partition.Partition;
-import com.lenovo.exfat.core.partition.PartitionTable;
-import com.lenovo.exfat.core.partition.PartitionTableEntry;
-import com.lenovo.exfat.core.partition.PartitionTableFactory;
-import com.lenovo.exfat.driver.BlockDeviceDriver;
-import com.lenovo.exfat.driver.BlockDeviceDriverFactory;
-import com.lenovo.exfat.driver.ByteBlockDevice;
-import com.lenovo.exfat.driver.scsi.ScsiBlockDevice;
-import com.lenovo.exfat.usb.UsbCommunicationInfo;
-
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.TimeZone;
+
+import com.lenovo.exfat.core.fs.ExFatFileSystemCreator;
+import com.lenovo.exfat.core.partition.PartitionTableEntry;
+import com.lenovo.exfat.driver.BlockDeviceDriver;
 
 /**
- * exFAT 文件系统格式
- *
- * -------------------------------------------------------------------------
- * | MBR(512字节)| DBR 及其保留扇区| FAT | 簇位图文件 | 大写字符文件 | 用户数据区|
- * -------------------------------------------------------------------------
- *
+ * This is a helper class to create different supported file systems. The file
+ * system is determined by {link
+ * 
+ * @author mjahnen
+ * 
  */
 public class FileSystemFactory {
-    private static final String TAG = FileSystemFactory.class.getSimpleName();
-    public static FileSystem createFileSystem(UsbCommunicationInfo usbCommunicationInfo) throws IOException {
-        // 开始读取USB设备时，偏移量为0，直接用scsi的方式读取
-        ScsiBlockDevice scsiBlockDevice = BlockDeviceDriverFactory.createBlockDevice(usbCommunicationInfo);
-        // 1. 读取磁盘前512字节,获取到 MBR 信息, 根据 MBR 信息, 获取分区表.
-        Log.i(TAG,"4. 建立分区表");
-        PartitionTable partitionTable = PartitionTableFactory.createPartitionTable(scsiBlockDevice);
 
-        // 2. 根据分区表，获取分区信息.
-        Log.i(TAG,"5. 建立分区");
-        Partition partition = initPartitions(partitionTable,scsiBlockDevice);
+    public static class UnsupportedFileSystemException extends IOException {
 
-        // 3. 根据分区信息，建立文件系统
-        Log.i(TAG,"6. 建立文件系统");
-        // 找到分区后读取USB设备需要加上偏移量
-        ByteBlockDevice byteBlockDevice  = new ByteBlockDevice(scsiBlockDevice,partition.getLogicalOffsetToAdd());
-        FileSystem fs = new ExFatFileSystem(byteBlockDevice);
-        // 4. 初始化文件系统
-        fs.init();
-        
-        return fs;
     }
 
-    private static Partition initPartitions(PartitionTable partitionTable, BlockDeviceDriver blockDevice) throws IOException{
-        List<PartitionTableEntry> entrys = partitionTable.getPartitionTableEntries();
-        for(PartitionTableEntry entry : entrys){
-            Partition partition = Partition.createPartition(blockDevice,entry.getLogicalBlockAddress());
-            if(partition != null){
-                return partition;
+    private static List<FileSystemCreator> fileSystems = new ArrayList<>();
+    private static TimeZone timeZone = TimeZone.getDefault();
+
+    static {
+        FileSystemFactory.registerFileSystem(new ExFatFileSystemCreator());
+    }
+
+	public static FileSystem createFileSystem(PartitionTableEntry entry,
+                                              BlockDeviceDriver blockDevice) throws IOException, UnsupportedFileSystemException {
+		for(FileSystemCreator creator : fileSystems) {
+            FileSystem fs = creator.read(entry, blockDevice);
+            if(fs != null) {
+                return fs;
             }
         }
-        throw new IOException("未获取到分区信息！");
+
+        throw new UnsupportedFileSystemException();
+	}
+
+    /**
+     * Register a new file system.
+     * @param creator The creator which is able to check if a {@link BlockDeviceDriver} is holding
+     *                the correct type of file system and is able to instantiate a {@link FileSystem}
+     *                instance.
+     */
+    public static synchronized void registerFileSystem(FileSystemCreator creator) {
+        fileSystems.add(creator);
+    }
+
+    /**
+     * Set the timezone a file system should use to decode timestamps, if the file system only stores
+     * local date and time and has no reference which zone these timestamp correspond to. (True for
+     * FAT32, e.g.)
+     * @param zone The timezone to use.
+     */
+    public static void setTimeZone(TimeZone zone) {
+        timeZone = zone;
+    }
+
+    public static TimeZone getTimeZone() {
+        return timeZone;
     }
 }

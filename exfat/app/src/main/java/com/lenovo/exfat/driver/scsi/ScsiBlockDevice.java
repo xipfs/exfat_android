@@ -137,7 +137,7 @@ public class ScsiBlockDevice implements BlockDeviceDriver {
         return csw.getbCswStatus() == CommandStatusWrapper.COMMAND_PASSED;
     }
 
-    public synchronized void read(Long devOffset, ByteBuffer dest) throws IOException{
+    public  void read(Long devOffset, ByteBuffer dest) throws IOException{
         if (dest.remaining() % blockSize != 0) {
             throw new IllegalArgumentException("dest.remaining() must be multiple of blockSize!");
         }
@@ -146,7 +146,7 @@ public class ScsiBlockDevice implements BlockDeviceDriver {
         dest.position(dest.limit());
     }
 
-    public synchronized void write(Long devOffset,ByteBuffer src) throws IOException{
+    public  void write(Long devOffset,ByteBuffer src) throws IOException{
         if (src.remaining() % blockSize != 0) {
             throw new IllegalArgumentException("src.remaining() must be multiple of blockSize!");
         }

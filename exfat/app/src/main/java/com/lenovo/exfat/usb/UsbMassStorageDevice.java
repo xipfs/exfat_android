@@ -8,10 +8,6 @@ import com.lenovo.exfat.driver.BlockDeviceDriver;
 import com.lenovo.exfat.driver.BlockDeviceDriverFactory;
 import com.lenovo.exfat.driver.ByteBlockDevice;
 import com.lenovo.exfat.driver.scsi.ScsiBlockDevice;
-import com.lenovo.exfat.partition.Partition;
-import com.lenovo.exfat.partition.PartitionTable;
-import com.lenovo.exfat.partition.PartitionTableEntry;
-import com.lenovo.exfat.partition.PartitionTableFactory;
 
 import java.io.IOException;
 import java.util.HashMap;

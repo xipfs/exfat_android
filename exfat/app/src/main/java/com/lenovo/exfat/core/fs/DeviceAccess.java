@@ -8,11 +8,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 /**
- *
- * 通过此类对 USB 设备进行访问
- *
- * @auther xiehui
- * @create 2019-10-10 下午3:13
+ * @author xiehui
+ * @date 2019-10-23 下午4:35
  */
 public class DeviceAccess {
     /**
@@ -78,11 +75,8 @@ public class DeviceAccess {
     public void read(ByteBuffer dest, long offset) throws IOException {
         device.read(offset, dest);
     }
-    public synchronized void write(ByteBuffer dest, long offset) throws IOException {
+    public void write(ByteBuffer dest, long offset) throws IOException {
         device.write(offset, dest);
     }
 
-    public void flush() throws IOException{
-        device.flush();
-    }
 }
